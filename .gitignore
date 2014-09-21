@@ -2,4 +2,4 @@ example*
 *.conf
 *.pyc
 *~
-installed-files.txt
+installed_files.txt
