@@ -1,0 +1,270 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Generated with glade 3.16.1 -->
+<interface>
+  <requires lib="gtk+" version="3.10"/>
+  <requires lib="" version="3.10"/>
+  <requires lib="gtksourceview" version="3.0"/>
+  <object class="GtkFileFilter" id="filterGlade">
+    <patterns>
+      <pattern>*.glade</pattern>
+      <pattern>*.ui</pattern>
+    </patterns>
+  </object>
+  <object class="GtkImage" id="imgGenerate">
+    <property name="visible">True</property>
+    <property name="can_focus">False</property>
+    <property name="stock">gtk-execute</property>
+  </object>
+  <object class="GtkListStore" id="listTheme">
+    <columns>
+      <!-- column-name theme_name -->
+      <column type="gchararray"/>
+    </columns>
+  </object>
+  <object class="GtkWindow" id="winMain">
+    <property name="can_focus">False</property>
+    <property name="window_position">center-always</property>
+    <property name="default_width">750</property>
+    <property name="default_height">600</property>
+    <property name="destroy_with_parent">True</property>
+    <signal name="destroy" handler="winMain_destroy_cb" swapped="no"/>
+    <child>
+      <object class="GtkBox" id="boxMain">
+        <property name="visible">True</property>
+        <property name="can_focus">False</property>
+        <property name="orientation">vertical</property>
+        <child>
+          <object class="GtkBox" id="boxControls">
+            <property name="visible">True</property>
+            <property name="can_focus">False</property>
+            <child>
+              <object class="GtkBox" id="boxFileOpen">
+                <property name="visible">True</property>
+                <property name="can_focus">False</property>
+                <property name="orientation">vertical</property>
+                <child>
+                  <object class="GtkLabel" id="lblFileOpen">
+                    <property name="visible">True</property>
+                    <property name="can_focus">False</property>
+                    <property name="halign">start</property>
+                    <property name="margin_left">10</property>
+                    <property name="margin_top">5</property>
+                    <property name="label" translatable="yes">Glade file:</property>
+                  </object>
+                  <packing>
+                    <property name="expand">False</property>
+                    <property name="fill">False</property>
+                    <property name="position">0</property>
+                  </packing>
+                </child>
+                <child>
+                  <object class="GtkFileChooserButton" id="btnFileOpen">
+                    <property name="visible">True</property>
+                    <property name="can_focus">False</property>
+                    <property name="filter">filterGlade</property>
+                    <property name="title" translatable="yes">Select a Glade File</property>
+                    <property name="width_chars">30</property>
+                    <signal name="selection-changed" handler="btnFileOpen_selection_changed_cb" swapped="no"/>
+                  </object>
+                  <packing>
+                    <property name="expand">False</property>
+                    <property name="fill">True</property>
+                    <property name="position">1</property>
+                  </packing>
+                </child>
+              </object>
+              <packing>
+                <property name="expand">False</property>
+                <property name="fill">False</property>
+                <property name="position">0</property>
+              </packing>
+            </child>
+            <child>
+              <object class="GtkBox" id="boxTheme">
+                <property name="visible">True</property>
+                <property name="can_focus">False</property>
+                <property name="margin_right">5</property>
+                <property name="margin_top">5</property>
+                <property name="orientation">vertical</property>
+                <child>
+                  <object class="GtkLabel" id="lblTheme">
+                    <property name="visible">True</property>
+                    <property name="can_focus">False</property>
+                    <property name="halign">start</property>
+                    <property name="margin_left">20</property>
+                    <property name="margin_right">10</property>
+                    <property name="label" translatable="yes">Theme:</property>
+                  </object>
+                  <packing>
+                    <property name="expand">False</property>
+                    <property name="fill">False</property>
+                    <property name="position">0</property>
+                  </packing>
+                </child>
+                <child>
+                  <object class="GtkComboBox" id="comboTheme">
+                    <property name="visible">True</property>
+                    <property name="can_focus">False</property>
+                    <property name="margin_left">10</property>
+                    <property name="model">listTheme</property>
+                    <property name="id_column">0</property>
+                    <signal name="changed" handler="comboTheme_changed_cb" swapped="no"/>
+                  </object>
+                  <packing>
+                    <property name="expand">False</property>
+                    <property name="fill">True</property>
+                    <property name="position">1</property>
+                  </packing>
+                </child>
+              </object>
+              <packing>
+                <property name="expand">False</property>
+                <property name="fill">False</property>
+                <property name="pack_type">end</property>
+                <property name="position">1</property>
+              </packing>
+            </child>
+          </object>
+          <packing>
+            <property name="expand">False</property>
+            <property name="fill">True</property>
+            <property name="position">0</property>
+          </packing>
+        </child>
+        <child>
+          <object class="GtkBox" id="boxOutputControls">
+            <property name="visible">True</property>
+            <property name="can_focus">False</property>
+            <property name="orientation">vertical</property>
+            <child>
+              <object class="GtkLabel" id="lblOutput">
+                <property name="visible">True</property>
+                <property name="can_focus">False</property>
+                <property name="halign">start</property>
+                <property name="margin_left">10</property>
+                <property name="margin_top">5</property>
+                <property name="label" translatable="yes">Generated code:</property>
+              </object>
+              <packing>
+                <property name="expand">False</property>
+                <property name="fill">False</property>
+                <property name="position">0</property>
+              </packing>
+            </child>
+            <child>
+              <object class="GtkScrolledWindow" id="scrollOutput">
+                <property name="visible">True</property>
+                <property name="can_focus">True</property>
+                <property name="shadow_type">in</property>
+                <child>
+                  <object class="GtkSourceView" id="srcviewOutput">
+                    <property name="visible">True</property>
+                    <property name="can_focus">True</property>
+                    <property name="left_margin">2</property>
+                    <property name="right_margin">2</property>
+                    <property name="input_hints">GTK_INPUT_HINT_WORD_COMPLETION | GTK_INPUT_HINT_NONE</property>
+                    <property name="show_line_numbers">True</property>
+                    <property name="tab_width">4</property>
+                    <property name="indent_width">4</property>
+                    <property name="auto_indent">True</property>
+                    <property name="insert_spaces_instead_of_tabs">True</property>
+                    <property name="show_right_margin">True</property>
+                    <property name="smart_home_end">always</property>
+                    <property name="highlight_current_line">True</property>
+                  </object>
+                </child>
+              </object>
+              <packing>
+                <property name="expand">True</property>
+                <property name="fill">True</property>
+                <property name="position">1</property>
+              </packing>
+            </child>
+            <child>
+              <object class="GtkBox" id="boxOutputButtons">
+                <property name="visible">True</property>
+                <property name="can_focus">False</property>
+                <child>
+                  <object class="GtkButton" id="btnGenerate">
+                    <property name="label" translatable="yes">Generate</property>
+                    <property name="width_request">65</property>
+                    <property name="height_request">40</property>
+                    <property name="visible">True</property>
+                    <property name="can_focus">True</property>
+                    <property name="receives_default">True</property>
+                    <property name="image">imgGenerate</property>
+                    <signal name="activate" handler="btnGenerate_activate_cb" swapped="no"/>
+                    <signal name="clicked" handler="btnGenerate_clicked_cb" swapped="no"/>
+                  </object>
+                  <packing>
+                    <property name="expand">False</property>
+                    <property name="fill">False</property>
+                    <property name="position">0</property>
+                  </packing>
+                </child>
+                <child>
+                  <object class="GtkBox" id="boxOptions">
+                    <property name="visible">True</property>
+                    <property name="can_focus">False</property>
+                    <property name="orientation">vertical</property>
+                    <child>
+                      <object class="GtkCheckButton" id="chkDynamic">
+                        <property name="label" translatable="yes">Initialize objects dynamically</property>
+                        <property name="visible">True</property>
+                        <property name="can_focus">True</property>
+                        <property name="receives_default">False</property>
+                        <property name="margin_left">10</property>
+                        <property name="margin_top">8</property>
+                        <property name="xalign">0</property>
+                        <property name="draw_indicator">True</property>
+                      </object>
+                      <packing>
+                        <property name="expand">False</property>
+                        <property name="fill">False</property>
+                        <property name="position">0</property>
+                      </packing>
+                    </child>
+                  </object>
+                  <packing>
+                    <property name="expand">False</property>
+                    <property name="fill">False</property>
+                    <property name="position">1</property>
+                  </packing>
+                </child>
+                <child>
+                  <object class="GtkButton" id="btnSave">
+                    <property name="label">gtk-save</property>
+                    <property name="width_request">65</property>
+                    <property name="height_request">40</property>
+                    <property name="visible">True</property>
+                    <property name="can_focus">True</property>
+                    <property name="receives_default">True</property>
+                    <property name="use_stock">True</property>
+                    <signal name="activate" handler="btnSave_activate_cb" swapped="no"/>
+                    <signal name="clicked" handler="btnSave_clicked_cb" swapped="no"/>
+                  </object>
+                  <packing>
+                    <property name="expand">False</property>
+                    <property name="fill">False</property>
+                    <property name="pack_type">end</property>
+                    <property name="position">2</property>
+                  </packing>
+                </child>
+              </object>
+              <packing>
+                <property name="expand">False</property>
+                <property name="fill">False</property>
+                <property name="position">2</property>
+              </packing>
+            </child>
+          </object>
+          <packing>
+            <property name="expand">True</property>
+            <property name="fill">True</property>
+            <property name="position">1</property>
+          </packing>
+        </child>
+      </object>
+    </child>
+  </object>
+</interface>

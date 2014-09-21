@@ -1,0 +1,34 @@
+/*
+    Installation configuration for glader.
+    Please don't modify these values.
+
+    You can run `install --user` to install locally,
+    or `sudo install` to install globally.
+
+    -Cj
+*/
+{
+    "paths": {
+        /*  The readme and all glader .py/.glade files are installed to
+            the target application dir.
+            The installer is automatically copied for possible removal
+            at a later date.
+        */
+        "files": ["^glader", "README.md"],
+
+        // For local dev use. Ignores all backup files and log files.
+        "excludes": ["~$", "\\.log$"],
+
+        /*  Executable files to symlink under the target '../bin' dir.
+            Not really needed unless you've added some foreign executable
+            into the current directory.
+        */
+        "executables": ["glader.py"],
+
+        /*  The top level dir for installation under the target app dir.
+            Not really needed unless you have renamed the directory since
+            extracting the package.
+        */
+        "toplevel": "glader"
+    }
+}
