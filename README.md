@@ -53,3 +53,8 @@ Usage:
         -h,--help      : Show this help message.
         -v,--version   : Show version.
 ```
+
+Preview:
+--------
+
+![Glader Preview](http://welbornprod.com/static/images/glader/glader-preview.png)
