@@ -528,7 +528,8 @@ class Installer(object):
                 self.report_error(errfmt.format(destlink, exepath, ex))
             else:
                 # Created link, check the path if $PATH is available.
-                if env_path and (not exepath in env_path):
+                linkdir = os.path.split(destlink)[0]
+                if env_path and (not linkdir in env_path):
                     self.report('\n'.join((
                         '    Directory is not in $PATH: {}',
                         '    \'{}\' may not be available globally.')
@@ -622,7 +623,6 @@ class Installer(object):
             r'//.*?$|/\*.*?\*/|\'(?:\\.|[^\\\'])*\'',
             re.DOTALL | re.MULTILINE)
         stripped_data = commentpat.sub('', configdata)
-        print('STRIPPED:\n{}'.format(stripped_data))
         # Parse as json (may raise ValueError)
         try:
             config = json.loads(stripped_data)
