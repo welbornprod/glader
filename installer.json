@@ -1,7 +1,7 @@
 {
     "paths": {
         "files": ["^glader", "README.md"],
-        "excludes": ["~$", "\\.log$"],
+        "excludes": ["~$", "\\.log$", "\\.conf$"],
         "executables": ["glader.py"],
         "toplevel": "glader"
     }
