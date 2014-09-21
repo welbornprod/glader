@@ -1,0 +1,5 @@
+example*
+*.conf
+*.pyc
+*~
+installed-files.txt
