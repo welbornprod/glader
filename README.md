@@ -6,9 +6,10 @@ can then be filled in to provide functionality. Arguments for signal handlers
 are automatically decided through introspection using Gtk.
 
 I didn't know this before I wrote it, but this does the exact same thing that
-`pyqt4uic` and `pykde4uic` do for Qt designer files. It reads the glade file's
-XML, parses it, and uses introspection to generate function stubs for signal
-handlers.
+`pyqt4uic` and `pykde4uic` do for Qt designer files. It does a little more
+actually. It includes a GUI for previewing/editing, and also generates stubs
+for the signal handlers. It does this by reading the glade file's XML,
+parsing it, and using introspection to generate the stubs.
 
 Command Line:
 -------------
