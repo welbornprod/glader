@@ -11,6 +11,15 @@ actually. It includes a GUI for previewing/editing, and also generates stubs
 for the signal handlers. It does this by reading the glade file's XML,
 parsing it, and using introspection to generate the stubs.
 
+The glade file still needs to be present in the finished application
+directory. It is used with `Gtk.Builder.add_from_file()` to generate the
+widgets.
+
+When everything is working as expected, doing
+`glader input.glade output.py` will create an executable Gtk application
+that can be ran and previewed by running `./output.py`.
+
+
 Command Line:
 -------------
 
@@ -34,10 +43,12 @@ Themes are located in `/usr/share/gtksourceview-3.0/styles`, and can be
 downloaded from various places on the internet. The most common is
 [https://wiki.gnome.org/Projects/GtkSourceView/StyleScheme](https://wiki.gnome.org/Projects/GtkSourceView/StyleScheme).
 
+
 Usage:
 ------
 
 ```
+
     Usage:
         glader.py -h | -v
         glader.py [FILE] [OUTFILE] [-d] [-g]
@@ -54,7 +65,48 @@ Usage:
         -v,--version   : Show version.
 ```
 
-Preview:
+
+Dependencies:
+-------------
+
+Glader has several GTK-related dependencies. If you are already creating GTK
+apps then you may have some of these installed already.
+
+###Python modules (installed with [pip](https://pypi.python.org)):
+
+* **docopt** - *Handles command-line argument parsing.*
+
+###System packages (installed with [package manager](https://wiki.debian.org/apt-get)):
+
+* **gir1.2-gtk-3.0** - *Provides helpers and access to GIRepository.*
+* **libgtksourceview-3.0-dev** - *Provides the `GtkSourceView` widget.*
+* **python3-gi** - *Provides python bindings for gobject-introspection.*
+
+There may be others, I will fill in the missing dependencies as they are found.
+Message me or file an issue if you run into errors.
+
+
+Compatibility:
+--------------
+
+Glader is designed for
+[PyGTK3](http://python-gtk-3-tutorial.readthedocs.org/en/latest/install.html),
+and [Python 3](https://www.python.org/downloads/).
+
+It's possible to backport this to older versions, but no work will be done on
+that unless the need is great.
+File an issue if that is something you would like to see.
+
+
+Contributions:
+--------------
+
+Contributions are welcome. That's what this repo is for.
+File an issue, or send me a pull request if you would like to see a
+feature added to Glader.
+
+
+GUI Preview:
 --------
 
-![Glader Preview](http://welbornprod.com/static/images/glader/glader-preview.png)
+![Glader](http://welbornprod.com/static/images/glader/glader-preview.png)
