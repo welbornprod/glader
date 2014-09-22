@@ -34,6 +34,8 @@ class App(Gtk.Window):
         except Exception as ex:
             print('\nError building main window!\n{}'.format(ex))
             sys.exit(1)
+        # A GladeFile() instance set by generate_code().
+        self.glade = None
 
         # Get gui objects
         self.btnFileOpen = self.builder.get_object('btnFileOpen')
@@ -184,6 +186,7 @@ class App(Gtk.Window):
             self.msgs.warn('Please select an input file.')
             return None
         elif not os.path.exists(filename):
+            self.glade = None
             self.bufferOutput.set_text('')
             self.msgs.warn('Glade file does not exist: {}'.format(filename))
             return None
@@ -194,10 +197,12 @@ class App(Gtk.Window):
         except Exception as ex:
             errfmt = 'Error parsing glade file:\n   {}\n\n{}'
             self.msgs.error(errfmt.format(filename, ex))
+            self.glade = None
             return None
 
         content = gladefile.get_content()
         self.bufferOutput.set_text(content)
+        self.glade = gladefile
 
     def get_theme_by_name(self, name):
         """ Retrieves a StyleScheme from self.themes by it's proper name.
@@ -267,7 +272,15 @@ class App(Gtk.Window):
             self.msgs.error(errfmt.format(outputfile, ex))
             return None
 
-        self.msgs.info('File was saved: {}'.format(outputfile))
+        msglines = ['File was saved: {}'.format(outputfile)]
+        try:
+            self.glade.make_executable(outputfile)
+            msglines.append('Mode +rwx (774) was set to make it executable.')
+        except (PermissionError, EnvironmentError) as experm:
+            errfmt = 'Unable to make it executable:\n  {}'
+            msglines.append(errfmt.format(experm))
+
+        self.msgs.info('\n'.join(msglines))
         return None
 
 
@@ -310,7 +323,8 @@ class FileDialogSave(object):
                 '_Save', Gtk.ResponseType.OK)
         )
         dlg.set_default_response(Gtk.ResponseType.OK)
-        dlg.set_filename(self.filename)
+        if self.filename:
+            dlg.set_filename(self.filename)
 
         # build filters
         for dlgfilter in self._build_filters():

@@ -4,7 +4,7 @@
     -Christopher Welborn 09-14-14
 """
 NAME = 'Glader'
-__version__ = '0.0.1-2'
+__version__ = '0.0.1-3'
 VERSIONSTR = '{} v. {}'.format(NAME, __version__)
 
 
@@ -20,6 +20,7 @@ def import_fail(err):
     sys.exit(1)
 
 import os.path
+import stat
 import sys
 from datetime import datetime
 
@@ -229,6 +230,13 @@ if __name__ == '__main__':
             spacing,
             joiner(initcodes))
 
+    def make_executable(self, filename=None):
+        """ Make a file executable, by setting mode 774. """
+        filename = filename or self.filename
+        # chmod 774
+        mode774 = stat.S_IRWXU | stat.S_IRWXG | stat.S_IROTH
+        os.chmod(filename, mode774)
+
     def names(self):
         """ Return a list of all object names. """
         return sorted([o.name for o in self.objects])
@@ -263,6 +271,8 @@ if __name__ == '__main__':
         content = self.get_content()
         with open(filename, 'w') as f:
             f.write(content)
+
+        self.make_executable(filename)
         return filename
 
 
