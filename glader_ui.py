@@ -29,7 +29,8 @@ class App(Gtk.Window):
         GObject.type_register(GtkSource.View)
 
         try:
-            gladefile = 'glader.glade'
+            scriptdir = os.path.abspath(sys.path[0])
+            gladefile = os.path.join(scriptdir, 'glader.glade')
             self.builder.add_from_file(gladefile)
         except Exception as ex:
             print('\nError building main window!\n{}'.format(ex))

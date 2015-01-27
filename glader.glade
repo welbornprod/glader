@@ -27,6 +27,7 @@
     <property name="default_width">750</property>
     <property name="default_height">600</property>
     <property name="destroy_with_parent">True</property>
+    <property name="icon">glader-icon.xpm</property>
     <signal name="destroy" handler="winMain_destroy_cb" swapped="no"/>
     <child>
       <object class="GtkBox" id="boxMain">
