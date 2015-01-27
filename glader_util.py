@@ -4,7 +4,7 @@
     -Christopher Welborn 09-14-14
 """
 NAME = 'Glader'
-__version__ = '0.0.1-3'
+__version__ = '0.0.1-4'
 VERSIONSTR = '{} v. {}'.format(NAME, __version__)
 
 
