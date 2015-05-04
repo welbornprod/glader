@@ -3,3 +3,4 @@ example*
 *.pyc
 *~
 installed_files.txt
+release
