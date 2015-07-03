@@ -4,7 +4,7 @@
     -Christopher Welborn 09-14-14
 """
 NAME = 'Glader'
-__version__ = '0.0.1-4'
+__version__ = '0.0.2'
 VERSIONSTR = '{} v. {}'.format(NAME, __version__)
 
 
@@ -65,14 +65,19 @@ NAME = 'GtkApp'
 __version__ = '0.0.1'
 VERSIONSTR = '{{}} v. {{}}'.format(NAME, __version__)
 
+
 class App(Gtk.Window):
     \"\"\" Main window with all components. \"\"\"
 
     def __init__(self):
         Gtk.Window.__init__(self)
         self.builder = Gtk.Builder()
+        gladefile = '{filename}'
+        if not os.path.exists(gladefile):
+            # Look for glade file in this project's directory.
+            gladefile = os.path.join(sys.path[0], gladefile)
+
         try:
-            gladefile = '{filename}'
             self.builder.add_from_file(gladefile)
         except Exception as ex:
             print('\\nError building main window!\\n{{}}'.format(ex))
@@ -92,7 +97,7 @@ class App(Gtk.Window):
 
 def main():
     \"\"\" Main entry point for the program. \"\"\"
-    app = App()
+    app = App()  # noqa
     ret = Gtk.main()
     sys.exit(ret)
 
@@ -405,7 +410,7 @@ class SignalHandler(object):
         else:
             gtkname = self.widgettype
 
-         # Find the widget class in Gtk.
+        # Find the widget class in Gtk.
         widget = getattr(Gtk, gtkname, None)
 
         # Find the event handler function info for the widget.
