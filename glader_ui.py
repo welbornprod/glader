@@ -10,7 +10,8 @@ from glader_util import (
     import_fail,
     settings,
     GladeFile,
-    NAME, VERSIONSTR, __version__)
+    NAME
+)
 
 try:
     from gi.repository import Gtk, GtkSource, GObject, Pango
@@ -373,7 +374,7 @@ class MessageBoxes(object):
         dialog.destroy()
 
     def warn(self, message, okcancel=False):
-        btns = GtkButtonsType.OK_CANCEL if okcancel else Gtk.ButtonsType.OK
+        btns = Gtk.ButtonsType.OK_CANCEL if okcancel else Gtk.ButtonsType.OK
         dialog = Gtk.MessageDialog(
             self.parent,
             0,
@@ -408,7 +409,7 @@ def inspect_object(o):
 
 def gui_main(filename=None, outputfile=None, dynamic_init=False):
     """ Main entry point for the program. """
-    app = App(
+    app = App(  # noqa
         filename=filename,
         outputfile=outputfile,
         dynamic_init=dynamic_init)

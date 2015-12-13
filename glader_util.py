@@ -4,7 +4,7 @@
     -Christopher Welborn 09-14-14
 """
 NAME = 'Glader'
-__version__ = '0.0.2'
+__version__ = '0.0.3'
 VERSIONSTR = '{} v. {}'.format(NAME, __version__)
 
 
@@ -53,8 +53,8 @@ class GladeFile(object):
     # Main template for output file.
     template = """#!/usr/bin/env python3
 \"\"\"
-        ...
-        {date}
+    ...
+    {date}
 \"\"\"
 
 import os
@@ -98,8 +98,7 @@ class App(Gtk.Window):
 def main():
     \"\"\" Main entry point for the program. \"\"\"
     app = App()  # noqa
-    ret = Gtk.main()
-    sys.exit(ret)
+    return Gtk.main()
 
 
 if __name__ == '__main__':
