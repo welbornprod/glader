@@ -3,8 +3,13 @@
     Helper classes for parsing glade files and generating skeleton code.
     -Christopher Welborn 09-14-14
 """
+import os.path
+import stat
+import sys
+from datetime import datetime
+
 NAME = 'Glader'
-__version__ = '0.0.3'
+__version__ = '0.0.4'
 VERSIONSTR = '{} v. {}'.format(NAME, __version__)
 
 
@@ -19,18 +24,16 @@ def import_fail(err):
     print('\n'.join(msglines).format(namever=VERSIONSTR, err=err))
     sys.exit(1)
 
-import os.path
-import stat
-import sys
-from datetime import datetime
-
 try:
     from easysettings import EasySettings
+    from gi import require_version as gi_require_version
+    gi_require_version('Gtk', '3.0')
     from gi.repository import Gtk
     from lxml import etree
     from lxml.cssselect import CSSSelector
 except ImportError as eximp:
     import_fail(eximp)
+
 
 CONFIGFILE = os.path.join(sys.path[0], 'glader.conf')
 settings = EasySettings(CONFIGFILE)
@@ -130,7 +133,7 @@ if __name__ == '__main__':
                                     for objname in objects:
                                         self.set_object(objname)
 
-                                Otherwise, the traditional method will be used:
+                                Otherwise, the normal method will be used:
                                     self.obj = self.builder.get_object('obj')
 
                                 Both achieve the same end result.
@@ -155,10 +158,12 @@ if __name__ == '__main__':
 
     def __str__(self):
         """ Return a str() for this GladeFile. """
-        return '{filename}: {objects} objects with {handlers} handlers'.format(
-            filename=self.filename,
-            objects=len(self.objects),
-            handlers=sum((len(o.signals) for o in self.objects))
+        return (
+            '{filename}: {objects} objects with {handlers} handlers'.format(
+                filename=self.filename,
+                objects=len(self.objects),
+                handlers=sum((len(o.signals) for o in self.objects))
+            )
         )
 
     def format_tuple_names(self, indent=12):

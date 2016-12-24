@@ -14,6 +14,9 @@ from glader_util import (
 )
 
 try:
+    from gi import require_version as gi_require_version
+    gi_require_version('Gtk', '3.0')
+    gi_require_version('GtkSource', '3.0')
     from gi.repository import Gtk, GtkSource, GObject, Pango
 except ImportError as eximp:
     import_fail(eximp)
@@ -157,7 +160,10 @@ class App(Gtk.Window):
         # Setting dynamic_init as a string is not needed with EasySettings,
         # but I am doing it for human-friendly editing reasons.
         # Pickle strings are ugly, and EasySettings.get_bool() will parse it.
-        settings.set('dynamic_init', str(self.chkDynamic.get_active()).lower())
+        settings.set(
+            'dynamic_init',
+            str(self.chkDynamic.get_active()).lower()
+        )
         settings.set('theme_id', self.theme.get_id())
         settings.save()
         Gtk.main_quit()
@@ -168,8 +174,10 @@ class App(Gtk.Window):
             Sorts the names first.
         """
         selected = -1
-        sort_by_name = lambda k: self.themes[k].get_name()
-        themeids = sorted(self.themes, key=sort_by_name)
+        themeids = sorted(
+            self.themes,
+            key=lambda k: self.themes[k].get_name()
+        )
         themenames = sorted((self.themes[k].get_name() for k in themeids))
         selthemename = self.theme.get_name()
         for i, themename in enumerate(themenames):
