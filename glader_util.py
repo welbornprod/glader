@@ -9,7 +9,7 @@ import sys
 from datetime import datetime
 
 NAME = 'Glader'
-__version__ = '0.0.4'
+__version__ = '0.1.0'
 VERSIONSTR = '{} v. {}'.format(NAME, __version__)
 
 
@@ -62,6 +62,8 @@ class GladeFile(object):
 
 import os
 import sys
+from gi import require_version as gi_require_version
+gi_require_version('Gtk', '3.0')
 from gi.repository import Gtk
 
 NAME = 'GtkApp'
@@ -261,7 +263,9 @@ if __name__ == '__main__':
         if not objectelems:
             raise ValueError('No objects found.')
 
-        return [ObjectInfo.from_element(e) for e in objectelems]
+        objects = [ObjectInfo.from_element(e) for e in objectelems]
+        # Remove separator objects.
+        return [o for o in objects if not o.name.startswith('<')]
 
     def signal_defs(self, indent=4):
         """ Returns concatenated signal definitions for all objects. """
