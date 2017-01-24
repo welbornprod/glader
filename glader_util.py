@@ -9,7 +9,7 @@ import sys
 from datetime import datetime
 
 NAME = 'Glader'
-__version__ = '0.1.0'
+__version__ = '0.2.0'
 VERSIONSTR = '{} v. {}'.format(NAME, __version__)
 
 
@@ -23,6 +23,7 @@ def import_fail(err):
     )
     print('\n'.join(msglines).format(namever=VERSIONSTR, err=err))
     sys.exit(1)
+
 
 try:
     from easysettings import EasySettings
@@ -54,7 +55,8 @@ class GladeFile(object):
     xpath_object = CSSSelector('object').path
 
     # Main template for output file.
-    template = """#!/usr/bin/env python3
+    template_header = """
+#!/usr/bin/env python3
 \"\"\"
     ...
     {date}
@@ -65,12 +67,28 @@ import sys
 from gi import require_version as gi_require_version
 gi_require_version('Gtk', '3.0')
 from gi.repository import Gtk
+""".strip()
 
+    template_body = """
 NAME = 'GtkApp'
 __version__ = '0.0.1'
 VERSIONSTR = '{{}} v. {{}}'.format(NAME, __version__)
 
+{class_def}
 
+def main():
+    \"\"\" Main entry point for the program. \"\"\"
+    app = App()  # noqa
+    return Gtk.main()
+
+
+if __name__ == '__main__':
+    mainret = main()
+    sys.exit(mainret)
+""".strip()
+
+    # Template for class only (lib mode)
+    template_class = """
 class App(Gtk.Window):
     \"\"\" Main window with all components. \"\"\"
 
@@ -98,18 +116,7 @@ class App(Gtk.Window):
         self.{mainwindow}.show_all()
 
 {set_object_def}{signaldefs}
-
-
-def main():
-    \"\"\" Main entry point for the program. \"\"\"
-    app = App()  # noqa
-    return Gtk.main()
-
-
-if __name__ == '__main__':
-    mainret = main()
-    sys.exit(mainret)
-"""
+""".strip()
 
     # Function definition for set_object() when dynamic init is used.
     set_object_def = """
@@ -173,8 +180,8 @@ if __name__ == '__main__':
         fmtname = '{space}\'{{name}}\','.format(space=' ' * indent)
         return '\n'.join((fmtname.format(name=n) for n in self.names()))
 
-    def get_content(self):
-        """ Renders the main template with current GladeFile info.
+    def get_class_content(self):
+        """ Renders the class template with current GladeFile info.
             Returns a string that can be written to file.
         """
         if self.dynamic_init:
@@ -185,20 +192,38 @@ if __name__ == '__main__':
             self.set_object(objname)"""
 
             objects = template.format(self.format_tuple_names(indent=12))
-            setobj_def = GladeFile.set_object_def
+            setobj_def = self.set_object_def
         else:
             # Regular init.
             objects = self.init_codes(indent=8)
             setobj_def = ''
-
-        return GladeFile.template.format(
-            date=datetime.today().strftime('%m-%d-%Y'),
+        return self.template_class.format(
             filename=self.filename,
+            mainwindow=self.get_main_window(),
             objects=objects,
             set_object_def=setobj_def,
             signaldefs=self.signal_defs(indent=4),
-            mainwindow=self.get_main_window()
         )
+
+    def get_content(self, lib_mode=False):
+        """ Renders the main template with current GladeFile info.
+            Returns a string that can be written to file.
+        """
+        if lib_mode:
+            return '\n\n'.join((
+                self.template_header.format(
+                    date=datetime.today().strftime('%m-%d-%Y')
+                ),
+                self.get_class_content(),
+            ))
+        return '\n\n'.join((
+            self.template_header.format(
+                date=datetime.today().strftime('%m-%d-%Y')
+            ),
+            self.template_body.format(
+                class_def='\n{}\n'.format(self.get_class_content()),
+            ),
+        ))
 
     def get_object(self, name, default=None):
         """ Retrieve an ObjectInfo by object name. """

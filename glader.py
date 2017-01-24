@@ -22,7 +22,7 @@ SCRIPTDIR = os.path.abspath(sys.path[0])
 USAGESTR = """{versionstr}
     Usage:
         {script} -h | -v
-        {script} [FILE] [OUTFILE] [-d] [-g]
+        {script} [FILE] [OUTFILE] [-d] [-g] [-l]
 
     Options:
         FILE           : Glade file to parse.
@@ -33,6 +33,8 @@ USAGESTR = """{versionstr}
                          You still have to use the 'Save' button to apply
                          changes.
         -h,--help      : Show this help message.
+        -l,--lib       : Generate a usuable Gtk.Window class only, not a
+                         script.
         -v,--version   : Show version.
 
 """.format(script=SCRIPT, versionstr=VERSIONSTR)
@@ -52,13 +54,20 @@ def main(argd):
         return do_cmdline(
             filename,
             outputfile=outfile,
-            dynamic_init=argd['--dynamic'])
+            dynamic_init=argd['--dynamic'],
+            lib_mode=argd['--lib'],
+        )
 
     # Full gui. Function exits the program when finished.
     if outfile == '-':
         # No stdout is used for gui mode.
         outfile = None
-    do_gui(filename, outputfile=outfile, dynamic_init=argd['--dynamic'])
+    do_gui(
+        filename,
+        outputfile=outfile,
+        dynamic_init=argd['--dynamic'],
+        lib_mode=argd['--lib'],
+    )
 
 
 def confirm(question):
@@ -67,7 +76,7 @@ def confirm(question):
     return ans.startswith('y')
 
 
-def do_cmdline(filename, outputfile=None, dynamic_init=False):
+def do_cmdline(filename, outputfile=None, dynamic_init=False, lib_mode=False):
     """ Just run the cmdline version. """
     if outputfile and os.path.exists(outputfile):
         msg = '\nFile exists: {}\n\nOverwrite it?'.format(outputfile)
@@ -80,7 +89,7 @@ def do_cmdline(filename, outputfile=None, dynamic_init=False):
         print('\nNo usable info was found for this file: {}'.format(filename))
         return 1
 
-    content = fileinfo.get_content()
+    content = fileinfo.get_content(lib_mode=lib_mode)
     if outputfile.startswith('-'):
         # User wants stdout.
         print(content)
@@ -101,19 +110,25 @@ def do_cmdline(filename, outputfile=None, dynamic_init=False):
     return 0 if content else 1
 
 
-def do_gui(filename=None, outputfile=None, dynamic_init=False):
+def do_gui(
+        filename=None, outputfile=None, dynamic_init=False, lib_mode=False):
     """ Run the full gui. """
     # This function will exit the program when finished.
     gui_main(
         filename=filename,
         outputfile=outputfile,
-        dynamic_init=dynamic_init)
+        dynamic_init=dynamic_init,
+        lib_mode=lib_mode,
+    )
 
 
 def get_gladeinfo(filename, dynamic_init=False):
     """ Retrieve widget/object info from a glade file. """
     try:
-        gladeinfo = GladeFile(filename, dynamic_init=dynamic_init)
+        gladeinfo = GladeFile(
+            filename,
+            dynamic_init=dynamic_init,
+        )
     except Exception as ex:
         print('\nError parsing glade file!: {}\n{}'.format(filename, ex))
         return None

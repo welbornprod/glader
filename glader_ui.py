@@ -26,7 +26,9 @@ class App(Gtk.Window):
 
     """ Main window with all components. """
 
-    def __init__(self, filename=None, outputfile=None, dynamic_init=False):
+    def __init__(
+            self, filename=None, outputfile=None,
+            dynamic_init=False, lib_mode=False):
         Gtk.Window.__init__(self)
         self.builder = Gtk.Builder()
         # Register the GtkSourceView type.
@@ -56,6 +58,12 @@ class App(Gtk.Window):
             # Load from settings if not set already.
             dynamic_init = settings.get_bool('dynamic_init', default=False)
         self.chkDynamic.set_active(dynamic_init)
+
+        self.chkLibMode = self.builder.get_object('chkLibMode')
+        if not lib_mode:
+            # Load from settings if not set already.
+            lib_mode = settings.get_bool('lib_mode', default=False)
+        self.chkLibMode.set_active(lib_mode)
 
         self.comboTheme = self.builder.get_object('comboTheme')
         # Initialize the cell renderer for the theme list.
@@ -164,6 +172,10 @@ class App(Gtk.Window):
             'dynamic_init',
             str(self.chkDynamic.get_active()).lower()
         )
+        settings.set(
+            'lib_mode',
+            str(self.chkLibMode.get_active()).lower()
+        )
         settings.set('theme_id', self.theme.get_id())
         settings.save()
         Gtk.main_quit()
@@ -210,7 +222,8 @@ class App(Gtk.Window):
             self.glade = None
             return None
 
-        content = gladefile.get_content()
+        lib_mode = self.chkLibMode.get_active()
+        content = gladefile.get_content(lib_mode=lib_mode)
         self.bufferOutput.set_text(content)
         self.glade = gladefile
 
@@ -415,12 +428,15 @@ def inspect_object(o):
     print('\n'.join(attrs))
 
 
-def gui_main(filename=None, outputfile=None, dynamic_init=False):
+def gui_main(
+        filename=None, outputfile=None, dynamic_init=False, lib_mode=False):
     """ Main entry point for the program. """
     app = App(  # noqa
         filename=filename,
         outputfile=outputfile,
-        dynamic_init=dynamic_init)
+        dynamic_init=dynamic_init,
+        lib_mode=lib_mode,
+    )
     ret = Gtk.main()
     sys.exit(ret)
 
