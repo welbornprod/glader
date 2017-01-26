@@ -33,7 +33,7 @@ USAGESTR = """{versionstr}
                          You still have to use the 'Save' button to apply
                          changes.
         -h,--help      : Show this help message.
-        -l,--lib       : Generate a usuable Gtk.Window class only, not a
+        -l,--lib       : Generate a usable Gtk.Window class only, not a
                          script.
         -v,--version   : Show version.
 
