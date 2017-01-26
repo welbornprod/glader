@@ -48,21 +48,22 @@ Usage:
 ------
 
 ```
+Usage:
+    glader -h | -v
+    glader [FILE] [OUTFILE] [-d] [-g] [-l]
 
-    Usage:
-        glader.py -h | -v
-        glader.py [FILE] [OUTFILE] [-d] [-g]
-
-    Options:
-        FILE           : Glade file to parse.
-        OUTFILE        : File name for output.
-                         If - is given, output will be printed to stdout.
-        -d,--dynamic   : Use dynamic object initialization method.
-        -g,--gui       : Force use of a GUI, even when an output file is given.
-                         You still have to use the 'Save' button to apply
-                         changes.
-        -h,--help      : Show this help message.
-        -v,--version   : Show version.
+Options:
+    FILE           : Glade file to parse.
+    OUTFILE        : File name for output.
+                     If - is given, output will be printed to stdout.
+    -d,--dynamic   : Use dynamic object initialization method.
+    -g,--gui       : Force use of a GUI, even when an output file is given.
+                     You still have to use the 'Save' button to apply
+                     changes.
+    -h,--help      : Show this help message.
+    -l,--lib       : Generate a usuable Gtk.Window class only, not a
+                     script.
+    -v,--version   : Show version.
 ```
 
 
