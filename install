@@ -21,7 +21,7 @@ import shutil
 import sys
 
 NAME = 'Python Installer'
-VERSION = '0.0.3'
+VERSION = '0.0.5'
 VERSIONSTR = '{} v. {}'.format(NAME, VERSION)
 SCRIPT = os.path.split(os.path.abspath(sys.argv[0]))[1]
 SCRIPTDIR = os.path.abspath(sys.path[0])
@@ -46,13 +46,15 @@ USAGESTR = """{versionstr}
 def main(argd):
     """ Main entry point, expects doctopt arg dict as argd """
 
-    # Initialize the installer.
+    # The Installer does all the heavy lifting,
+    # I am simply passing it a few settings and reporters for this cmdline app.
     installer = Installer(
         use_global=not argd['--user'],
         debug=argd['--debug'],
         reporter=print,
         debug_reporter=print,
-        error_reporter=fail)
+        error_reporter=fail,
+    )
 
     if argd['uninstall'] or argd['remove']:
         # Run uninstall instead.
@@ -113,7 +115,7 @@ class Installer(object):
             # Executable files (for installation in /usr/bin or /home/?/bin)
             'executables': []
         },
-        # Default is no dependencies
+        # Default is no dependencies (not implemented yet).
         'dependencies': {},
         # Default is user-specified from init (use_global = True/False).
         # 'global' or 'local' can be used to force a preference.
@@ -140,7 +142,7 @@ class Installer(object):
         'local/share'
     )
 
-    # Gome (/home/<user>) directories for installing executable symlinks.
+    # Home (/home/<user>) directories for installing executable symlinks.
     home_exe_dirs = (
         'bin',
         '.local/bin',
@@ -155,7 +157,8 @@ class Installer(object):
     def __init__(self, **kwargs):
         """ Initializes the installer, gathers files/dest-files and other
             info. Gathers everything needed to run self.install_files()
-            Possibly raises Installer.FatalError.
+            Possibly raises Installer.FatalError, when error_reporter isn't
+            set.
 
             Arguments:
                 use_global     : Do a global installation instead of local.
@@ -174,10 +177,8 @@ class Installer(object):
         """
         # Reporters need to be set before anything else, in case of errors.
         # Dummy function is used for debug report if nothing is set.
-        self.reporter = (
-            kwargs.get('reporter', None) or (lambda s: None))
-        self.debug_reporter = (
-            kwargs.get('debug_reporter', None) or (lambda s: None))
+        self.reporter = kwargs.get('reporter', lambda s: None)
+        self.debug_reporter = kwargs.get('debug_reporter', lambda s: None)
         self.set_error_reporter(kwargs.get('error_reporter', None))
         # Global, or local install.
         self.use_global = kwargs.get('use_global', False)
@@ -239,10 +240,31 @@ class Installer(object):
         """ Merge to dicts and return the result.
             Dicts are merged recursively so that old keys are always kept and
             new key values overwrite old ones.
-            d =  {1: True, 3: False, 4: {'a': True, 'c': False}}
-            d2 = {2: True, 3: True, 4: {'b': True, 'c': True}}
+            d =  {
+                1: True,
+                3: False,
+                4: {
+                    'a': True,
+                    'c': False
+                }
+            }
+            d2 = {
+                2: True,
+                3: True,
+                4: {
+                    'b': True,
+                    'c': True
+                }
+            }
             d3 = dictmerge(d, d2)
-            d3 == {1: True, 2: True, 3: True, 4: {'a':True, 'b': True, 'c': True}}
+            d3 == {
+                1: True,
+                2: True,
+                3: True,
+                4: {
+                    'a':True, 'b': True, 'c': True
+                }
+            }
         """
         merged = {}
         for k in basedict:
@@ -420,9 +442,9 @@ class Installer(object):
                     for includepat in includepats:
                         fullpath = os.path.join(self.cwd, filename)
                         if (includepat.search(filename) and
-                            os.path.isfile(fullpath)):
-                                filepaths.append(filename)
-                                break
+                                os.path.isfile(fullpath)):
+                            filepaths.append(filename)
+                            break
 
         # Parse excludes
         files = []
@@ -533,7 +555,7 @@ class Installer(object):
             else:
                 # Created link, check the path if $PATH is available.
                 linkdir = os.path.split(destlink)[0]
-                if env_path and (not linkdir in env_path):
+                if env_path and (linkdir not in env_path):
                     self.report('\n'.join((
                         '    Directory is not in $PATH: {}',
                         '    \'{}\' may not be available globally.')
@@ -635,7 +657,7 @@ class Installer(object):
             config = json.loads(stripped_data)
         except ValueError:
             # Let the error bubble up, but report the JSON that failed.
-            self.report_debug('Invalid JSON:\n{}'.format(parsed))
+            self.report_debug('Invalid JSON:\n{}'.format(configdata))
             raise
         return config
 
@@ -697,11 +719,13 @@ class Installer(object):
 
     def remove_files(self, files):
         """ Deletes/removes a list files and directories.
-            If an item is determined to be a directory, shutil.rmtree() is used.
-            For files, os.remove() is used.
-            Returns number of files that errored while removing.
+            For files, `os.remove()` is used, but if an item is determined to
+            be a directory, `shutil.rmtree()` is used instead.
+            Returns number of files that errored while removing so on success
+            it will return 0.
         """
-        # Sort for report-formatting, but also tries to delete parent dirs first.
+        # Sort for report-formatting, but also tries to delete parent dirs
+        # first.
         try:
             files.sort()
         except AttributeError:
@@ -785,38 +809,47 @@ class Installer(object):
             self.report_debug(debugfmt.format(Installer.installed_file))
             return True
 
-        if self.created:
-            files = sorted(self.created)
-            try:
-                with open(Installer.installed_file, 'w') as f:
-                    f.write('\n'.join(files))
-                    f.write('\n')
-                    f.flush()
-            except (TypeError, OSError) as ex:
-                failfmt = '\nFailed to write {}:\n  {}'
-                self.report(failfmt.format(Installer.installed_file, ex))
-                return False
-            # Copy installed_files.txt so it can be used in the dest dir.
-            destfile = os.path.abspath(
-                os.path.join(self.installdir, Installer.installed_file))
-            localfile = os.path.abspath(Installer.installed_file)
-            if destfile != localfile:
-                try:
-                    shutil.copy2(localfile, destfile)
-                except OSError as ex:
-                    errfmt = '\n'.join((
-                        '\nUnable to copy {} to destination: {}',
-                        'Local file is available: {}'))
-                    errmsg = errfmt.format(
-                        Installer.installed_file,
-                        destfile,
-                        localfile)
-                    self.report(errmsg)
-                    return False
-            # Success.
+        if not self.created:
+            # No files were created.
+            return False
+
+        try:
+            with open(Installer.installed_file, 'w') as f:
+                f.write('\n'.join(sorted(self.created)))
+                f.write('\n')
+                f.flush()
+        except (TypeError, OSError) as ex:
+            failfmt = '\nFailed to write {}:\n  {}'
+            self.report(failfmt.format(Installer.installed_file, ex))
+            return False
+        # Copy installed_files.txt so it can be used in the dest dir.
+        destfile = os.path.abspath(
+            os.path.join(self.installdir, Installer.installed_file))
+        localfile = os.path.abspath(Installer.installed_file)
+
+        if destfile == localfile:
+            # File already exists at the destination.
+            # TODO: Check modification times, overwrite destfile if older?
             return True
-        # No files were created.
-        return False
+
+        try:
+            shutil.copy2(localfile, destfile)
+        except OSError as ex:
+            errfmt = '\n'.join((
+                '\nUnable to copy {} to destination: {}',
+                'Local file is available: {}',
+                'Error: {}',
+            ))
+            errmsg = errfmt.format(
+                Installer.installed_file,
+                destfile,
+                localfile,
+                ex,
+            )
+            self.report(errmsg)
+            return False
+        # Success.
+        return True
 
 
 if __name__ == '__main__':
