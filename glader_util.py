@@ -9,8 +9,11 @@ import sys
 from datetime import datetime
 
 NAME = 'Glader'
-__version__ = '0.2.0'
+__version__ = '0.2.1'
 VERSIONSTR = '{} v. {}'.format(NAME, __version__)
+
+# Set with -D,--debug command-line options.
+DEBUG = ('-D' in sys.argv) or ('--debug' in sys.argv)
 
 
 def import_fail(err):
@@ -40,6 +43,13 @@ CONFIGFILE = os.path.join(sys.path[0], 'glader.conf')
 settings = EasySettings(CONFIGFILE)
 settings.name = NAME
 settings.version = __version__
+
+
+def debug(*args, **kwargs):
+    if not DEBUG:
+        return None
+    kwargs['file'] = sys.stderr
+    print(*args, **kwargs)
 
 
 class GladeFile(object):
@@ -290,7 +300,7 @@ class App(Gtk.Window):
 
         objects = [ObjectInfo.from_element(e) for e in objectelems]
         # Remove separator objects.
-        return [o for o in objects if not o.name.startswith('<')]
+        return [o for o in objects if o and not o.name.startswith('<')]
 
     def signal_defs(self, indent=4):
         """ Returns concatenated signal definitions for all objects. """
@@ -340,6 +350,7 @@ class ObjectInfo(object):
         # User's name for the widget.
         objname = element.get('id', None)
         if not objname:
+            debug('Element has no id: {!r}'.format(element))
             return None
         # Widget type.
         widget = element.get('class', None)
@@ -421,6 +432,7 @@ class SignalHandler(object):
         eventname = element.get('name', None)
         handlername = element.get('handler', '')
         if handlername.lower().startswith('gtk'):
+            debug('Ignoring GTK signal handler for: {!r}'.format(element))
             return None
         widgetname = handlername.split('_')[0]
         return cls(

@@ -8,6 +8,7 @@
 
 import os
 import sys
+import traceback
 from glader_util import import_fail, GladeFile, VERSIONSTR
 from glader_ui import gui_main
 
@@ -22,12 +23,13 @@ SCRIPTDIR = os.path.abspath(sys.path[0])
 USAGESTR = """{versionstr}
     Usage:
         {script} -h | -v
-        {script} [FILE] [OUTFILE] [-d] [-g] [-l]
+        {script} [FILE] [OUTFILE] [-D] [-d] [-g] [-l]
 
     Options:
         FILE           : Glade file to parse.
         OUTFILE        : File name for output.
                          If - is given, output will be printed to stdout.
+        -D,--debug     : Show more info on errors.
         -d,--dynamic   : Use dynamic object initialization method.
         -g,--gui       : Force use of a GUI, even when an output file is given.
                          You still have to use the 'Save' button to apply
@@ -38,6 +40,8 @@ USAGESTR = """{versionstr}
         -v,--version   : Show version.
 
 """.format(script=SCRIPT, versionstr=VERSIONSTR)
+
+DEBUG = ('-D' in sys.argv) or ('--debug' in sys.argv)
 
 
 def main(argd):
@@ -131,8 +135,17 @@ def get_gladeinfo(filename, dynamic_init=False):
         )
     except Exception as ex:
         print('\nError parsing glade file!: {}\n{}'.format(filename, ex))
+        if DEBUG:
+            print_exc()
         return None
     return gladeinfo
+
+
+def print_exc():
+    etype, evalue, etraceback = sys.exc_info()
+
+    lines = traceback.format_exception(etype, evalue, etraceback)
+    print(''.join(lines), file=sys.stderr)
 
 
 if __name__ == '__main__':
