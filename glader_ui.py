@@ -44,6 +44,12 @@ class App(Gtk.Window):
         # A GladeFile() instance set by generate_code().
         self.glade = None
 
+        # Requirement warnings issued already in generate_code().
+        # If a file needs a requirement warning, the warning will be issued
+        # and it's filename/requirements saved so that the warning is only
+        # issued once per file (with the same requirements).
+        self.require_warned = {}
+
         # Get gui objects
         self.btnFileOpen = self.builder.get_object('btnFileOpen')
         if filename:
@@ -132,6 +138,9 @@ class App(Gtk.Window):
         filename = widget.get_filename()
         if filename:
             # Automatically generate code for selected files.
+            if self.require_warned.get(filename, None):
+                # Manually re-opening the file resets the requirement warnings.
+                self.require_warned[filename] = None
             self.generate_code()
 
     def btnGenerate_activate_cb(self, widget, user_data=None):
@@ -226,6 +235,10 @@ class App(Gtk.Window):
         content = gladefile.get_content(lib_mode=lib_mode)
         self.bufferOutput.set_text(content)
         self.glade = gladefile
+        reqs = gladefile.extra_requires_msg()
+        if reqs and (self.require_warned.get(filename, None) != reqs):
+            self.require_warned[filename] = reqs
+            self.msgs.warn(reqs)
 
     def get_theme_by_name(self, name):
         """ Retrieves a StyleScheme from self.themes by it's proper name.

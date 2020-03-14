@@ -103,14 +103,17 @@ def do_cmdline(filename, outputfile=None, dynamic_init=False, lib_mode=False):
                 f.write(content)
             print('File was generated: {}'.format(outputfile))
         except (PermissionError, EnvironmentError) as ex:
-            print('\nError writing file: {}\n{}'.format(outputfile, ex))
+            print_err('\nError writing file: {}\n{}'.format(outputfile, ex))
             return 1
         try:
             fileinfo.make_executable(outputfile)
             print('Mode +rwx (774) was set to make it executable.')
         except (PermissionError, EnvironmentError) as experm:
-            print('Unable to make it executable:\n  {}'.format(experm))
+            print_err('Unable to make it executable:\n  {}'.format(experm))
 
+    reqs = fileinfo.extra_requires_msg()
+    if reqs:
+        print_err(f'\n{reqs}')
     return 0 if content else 1
 
 
@@ -139,6 +142,11 @@ def get_gladeinfo(filename, dynamic_init=False):
             print_exc()
         return None
     return gladeinfo
+
+
+def print_err(*args, **kwargs):
+    kwargs['file'] = kwargs.get('file', sys.stderr)
+    print(*args, **kwargs)
 
 
 def print_exc():
