@@ -11,10 +11,19 @@ import os
 import sys
 import unittest
 
+from pygments import highlight
+from pygments.lexers import get_lexer_by_name
+from pygments.formatters import Terminal256Formatter
+
+pyg_lexer = get_lexer_by_name('python3')
+pyg_formatter = Terminal256Formatter(bg='dark', style='monokai')
+
+
 GLADER_PATH = ''
 GLADER_PY_FILE = 'glader.py'
 TEST_GLADE_FILE = 'example.glade'
 TEST_GLADE_FILE_EXISTS = False
+SHOW_CODE = os.environ.get('TEST_GLADER_CODE', None) in ('1', 'yes', 'true')
 for try_path in ('.', '..', ):
     try_testfilepath = os.path.join(try_path, TEST_GLADE_FILE)
     if os.path.exists(try_testfilepath):
@@ -34,60 +43,41 @@ except ImportError as ex:
     sys.exit(1)
 
 
+def highlight_code(code):
+    """ Highlight some python code for the terminal. """
+    return highlight(code, pyg_lexer, pyg_formatter).strip()
+
+
 class GladerTests(unittest.TestCase):
 
-    def exec_code(self, code, filename=None):
+    def exec_code(self, code, filepath=None):
         """ Use ProcessOutput to run python code, and return the ProcessOutput
             object.
         """
-        exec(
-            compile(code, filename or '<unknown>', 'exec', dont_inherit=True)
-        )
+        code = code.replace('return Gtk.main()', 'return 0')
+        try:
+            exec(
+                compile(
+                    code,
+                    filepath or '<unknown>',
+                    'exec',
+                    dont_inherit=True,
+                ),
+                globals(),
+            )
+        except SystemExit:
+            # The body template calls sys.exit(), this is okay.
+            pass
 
-    def exec_err_msg(self, exc, lbl='Code execution failed:'):
-        return '\n'.join((
+    def exec_err_msg(self, exc, lbl='Code execution failed:', code=None):
+        lines = [
             lbl,
-            '  Error: {exctype}',
-            'Message: {exc}',
-        )).format(exctype=type(exc).__name__, exc=exc)
-
-    @unittest.skipUnless(TEST_GLADE_FILE_EXISTS, 'Missing test glade file.')
-    def test_non_dynamic_code_compiles(self):
-        """ Glader should generate valid python code in normal mode. """
-        gf = GladeFile(TEST_GLADE_FILE, dynamic_init=False)
-        try:
-            self.exec_code(gf.get_content(), filename=TEST_GLADE_FILE)
-        except Exception as ex:
-            self.fail(self.exec_err_msg(ex, 'Non-dynamic code failed:'))
-
-        try:
-            self.exec_code(
-                gf.get_content(lib_mode=True),
-                filename=TEST_GLADE_FILE
-            )
-        except Exception as ex:
-            self.fail(
-                self.exec_err_msg(ex, 'Non-dynamic lib_mode code failed:')
-            )
-
-    @unittest.skipUnless(TEST_GLADE_FILE_EXISTS, 'Missing test glade file.')
-    def test_dynamic_code_compiles(self):
-        """ Glader should generate valid python code in dynamic mode. """
-        gf = GladeFile(TEST_GLADE_FILE, dynamic_init=True)
-        try:
-            self.exec_code(gf.get_content(), filename=TEST_GLADE_FILE)
-        except Exception as ex:
-            self.fail(self.exec_err_msg(ex, 'Dynamic code failed:'))
-
-        try:
-            self.exec_code(
-                gf.get_content(lib_mode=True),
-                filename=TEST_GLADE_FILE
-            )
-        except Exception as ex:
-            self.fail(
-                self.exec_err_msg(ex, 'Dynamic lib_mode code failed:')
-            )
+            f'  Error: {type(exc).__name__}',
+            f'Message: {exc}',
+        ]
+        if code:
+            lines.extend(['Code:', highlight_code(code)])
+        return '\n'.join(lines)
 
     def test_exec_code(self):
         """ Make sure tests.exec_code is working correctly. """
@@ -101,13 +91,14 @@ class GladerTests(unittest.TestCase):
             try:
                 self.exec_code(
                     code,
-                    filename='<valid code>'
+                    filepath='<valid code>'
                 )
             except Exception as ex:
                 self.fail(
                     self.exec_err_msg(
                         ex,
-                        'exec_code failed on valid code: {}'.format(code)
+                        'exec_code failed on valid code: {}'.format(code),
+                        code=code if SHOW_CODE else None,
                     )
                 )
         invalid_code = (
@@ -119,7 +110,7 @@ class GladerTests(unittest.TestCase):
             try:
                 self.exec_code(
                     code,
-                    filename='<invalid code>'
+                    filepath='<invalid code>'
                 )
             except excs:
                 pass
@@ -127,6 +118,72 @@ class GladerTests(unittest.TestCase):
                 self.fail('exec_code did not fail on invalid code!: {}'.format(
                     code
                 ))
+
+    @unittest.skipUnless(TEST_GLADE_FILE_EXISTS, 'Missing test glade file.')
+    def test_non_dynamic_code_compiles(self):
+        """ Glader should generate valid python code in normal mode. """
+        gf = GladeFile(TEST_GLADE_FILE, dynamic_init=False)
+        code = gf.get_content()
+        try:
+            self.exec_code(
+                code,
+                filepath=TEST_GLADE_FILE,
+            )
+        except Exception as ex:
+            self.fail(
+                self.exec_err_msg(
+                    ex,
+                    'Non-dynamic code failed:',
+                    code=code if SHOW_CODE else None,
+                )
+            )
+
+        code = gf.get_content(lib_mode=True)
+        try:
+            self.exec_code(
+                code,
+                filepath=TEST_GLADE_FILE,
+            )
+        except Exception as ex:
+            self.fail(
+                self.exec_err_msg(
+                    ex,
+                    'Non-dynamic lib_mode code failed:',
+                    code=code if SHOW_CODE else None,
+                )
+            )
+
+    @unittest.skipUnless(TEST_GLADE_FILE_EXISTS, 'Missing test glade file.')
+    def test_dynamic_code_compiles(self):
+        """ Glader should generate valid python code in dynamic mode. """
+        gf = GladeFile(TEST_GLADE_FILE, dynamic_init=True)
+        code = gf.get_content()
+        try:
+            self.exec_code(code, filepath=TEST_GLADE_FILE)
+        except Exception as ex:
+            self.fail(
+                self.exec_err_msg(
+                    ex,
+                    'Dynamic code failed:',
+                    code=code if SHOW_CODE else None,
+                )
+            )
+
+        code = gf.get_content(lib_mode=True)
+        try:
+            self.exec_code(
+                code,
+                filepath=TEST_GLADE_FILE
+            )
+        except Exception as ex:
+            self.fail(
+                self.exec_err_msg(
+                    ex,
+                    'Dynamic lib_mode code failed:',
+                    code=code if SHOW_CODE else None,
+                )
+            )
+
 
 if __name__ == '__main__':
     sys.exit(unittest.main(argv=sys.argv))

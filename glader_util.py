@@ -79,10 +79,10 @@ class GladeFile(object):
     # Xpath to find all <requires> elements.
     xpath_requires = CSSSelector('requires').path
 
-    def __init__(self, filename=None, dynamic_init=False):
+    def __init__(self, filepath=None, dynamic_init=False):
         """ Create a GladeFile to generate code from.
             Arguments:
-                filename      : File to parse.
+                filepath      : File to parse.
                 dynamic_init  : If true, generated code will dynamically
                                 create objects:
                                     objects = ('obj1', 'obj2')
@@ -94,16 +94,18 @@ class GladeFile(object):
 
                                 Both achieve the same end result.
         """
-        self.filename = filename
+        self.filepath = filepath
         self.dynamic_init = dynamic_init
 
         self.tree = None
+        self.top_levels = []
         self.objects = []
         self.requires = []
-        if filename:
-            self.tree = etree.parse(filename)
-            self.objects = GladeFile.objects_from_tree(self.tree)
-            self.requires = GladeFile.requires_from_tree(self.tree)
+        if filepath:
+            self.tree = etree.parse(filepath)
+            self.top_levels = self.top_levels_from_tree(self.tree)
+            self.objects = self.objects_from_tree(self.tree)
+            self.requires = self.requires_from_tree(self.tree)
 
     def __bool__(self):
         """ bool(GladeFile) is based on object count.
@@ -118,8 +120,8 @@ class GladeFile(object):
     def __str__(self):
         """ Return a str() for this GladeFile. """
         return (
-            '{filename}: {objects} objects with {handlers} handlers'.format(
-                filename=self.filename,
+            '{filepath}: {objects} objects with {handlers} handlers'.format(
+                filepath=self.filepath,
                 objects=len(self.objects),
                 handlers=sum((len(o.signals) for o in self.objects))
             )
@@ -155,7 +157,7 @@ class GladeFile(object):
             Returns a string that can be written to file.
         """
         if self.dynamic_init:
-            template = """        guinames = (
+            template = """guinames = (
 {}
         )
         for objname in guinames:
@@ -165,10 +167,10 @@ class GladeFile(object):
             setobj_def = template_set_object
         else:
             # Regular init.
-            objects = self.init_codes(indent=8)
+            objects = self.init_codes(indent=8).lstrip()
             setobj_def = ''
         return template_app.format(
-            filename=self.filename,
+            filepath=self.filepath,
             mainwindow=self.get_main_window(),
             objects=objects,
             set_object_def=setobj_def,
@@ -242,29 +244,27 @@ class GladeFile(object):
         """ Returns init code for all extra Requires. """
         return '\n'.join(r.init_code() for r in self.extra_requires())
 
-    def make_executable(self, filename=None):
+    def make_executable(self, filepath=None):
         """ Make a file executable, by setting mode 774. """
-        filename = filename or self.filename
+        filepath = filepath or self.filepath
         # chmod 774
         mode774 = stat.S_IRWXU | stat.S_IRWXG | stat.S_IROTH
-        os.chmod(filename, mode774)
+        os.chmod(filepath, mode774)
 
     def names(self):
         """ Return a list of all object names. """
         return sorted([o.name for o in self.objects])
 
-    @classmethod
-    def objects_from_glade(cls, filename):
+    def objects_from_glade(self, filepath):
         """ Returns a list of ObjectInfo parsed from a glade file.
             Possibly raises errors from etree.parse(),
             or ValueError when no objects are found.
         """
-        tree = etree.parse(filename)
-        return cls.objects_from_tree(tree)
+        tree = etree.parse(filepath)
+        return self.objects_from_tree(tree)
 
-    @classmethod
-    def objects_from_tree(cls, tree):
-        objectelems = tree.xpath(cls.xpath_object)
+    def objects_from_tree(self, tree):
+        objectelems = tree.xpath(self.xpath_object)
         if not objectelems:
             raise ValueError('No objects found.')
 
@@ -272,9 +272,8 @@ class GladeFile(object):
         # Remove separator objects.
         return [o for o in objects if o and not o.name.startswith('<')]
 
-    @classmethod
-    def requires_from_tree(cls, tree):
-        requireselems = tree.xpath(cls.xpath_requires)
+    def requires_from_tree(self, tree):
+        requireselems = tree.xpath(self.xpath_requires)
         if not requireselems:
             return []
         return [Requires.from_element(e) for e in requireselems]
@@ -290,15 +289,21 @@ class GladeFile(object):
                 signaldefs.append(signaldef)
         return '\n\n'.join(signaldefs)
 
-    def write_file(self, filename=None):
+    def top_levels_from_tree(self, tree):
+        objectelems = tree.findall('object')
+        objects = [ObjectInfo.from_element(e) for e in objectelems]
+        # Remove separator objects.
+        return [o for o in objects if o and not o.name.startswith('<')]
+
+    def write_file(self, filepath=None):
         """ Write parsed info to a file. """
-        filename = filename or self.filename
+        filepath = filepath or self.filepath
         content = self.get_content()
-        with open(filename, 'w') as f:
+        with open(filepath, 'w') as f:
             f.write(content)
 
-        self.make_executable(filename)
-        return filename
+        self.make_executable(filepath)
+        return filepath
 
 
 class ObjectInfo(object):
@@ -310,6 +315,7 @@ class ObjectInfo(object):
     def __init__(self, name=None, widget=None, objects=None, signals=None):
         self.name = name
         # Child objects.
+        self.is_separator = self.name and self.name.startswith('<')
         self.objects = objects or []
         self.widget = widget
         self.signals = signals or []
@@ -317,10 +323,6 @@ class ObjectInfo(object):
     def __repr__(self):
         """ Return a repr() for this object and it's signal handlers. """
         return self.repr_fmt()
-
-    def class_def(self):
-        """ Return a class definition for this object. """
-        pass
 
     @classmethod
     def from_element(cls, element):
@@ -448,7 +450,6 @@ class Requires(object):
 
 
 class SignalHandler(object):
-
     """ Holds information and helper methods for a single signal handler. """
 
     def __init__(self, name=None, handler=None, widget=None, widgettype=None):
