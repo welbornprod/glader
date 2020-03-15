@@ -52,19 +52,17 @@ settings.version = __version__
 template_header = get_template('header').rstrip()
 # Template for the executable section.
 template_body = get_template('body')
-# Class def for main Gtk.Window.
-template_app = get_template('app').rstrip()
 # Class def for top level classes.
 template_cls = get_template('cls').rstrip()
 # Function definition for set_object() when dynamic init is used.
 template_set_object = get_template('set_object', indent=4).rstrip()
 
-
-def debug(*args, **kwargs):
-    if not DEBUG:
-        return None
-    kwargs['file'] = sys.stderr
-    print(*args, **kwargs)
+# Xpath to find all <object> elements in a glade file.
+xpath_object = CSSSelector('object').path
+# Xpath to find all <requires> elements.
+xpath_requires = CSSSelector('requires').path
+# Xpath to find all <signal> elements.
+xpath_signal = CSSSelector('signal').path
 
 
 class GladeFile(object):
@@ -76,10 +74,6 @@ class GladeFile(object):
         Holds a collection of ObjectInfos with helper methods.
 
     """
-    # Xpath to find all <object> elements in a glade file.
-    xpath_object = CSSSelector('object').path
-    # Xpath to find all <requires> elements.
-    xpath_requires = CSSSelector('requires').path
 
     def __init__(self, filepath=None, dynamic_init=False):
         """ Create a GladeFile to generate code from.
@@ -146,36 +140,6 @@ class GladeFile(object):
             'gi_require_version() call.',
         ))
 
-    def format_tuple_names(self, indent=12):
-        """ Format object names as if they were inside a tuple definition. """
-        fmtname = '{space}\'{{name}}\','.format(space=' ' * indent)
-        return '\n'.join((fmtname.format(name=n) for n in self.names()))
-
-    def get_class_content(self):
-        """ Renders the app template with current GladeFile info.
-            Returns a string that can be written to file.
-        """
-        if self.dynamic_init:
-            template = """guinames = (
-{}
-        )
-        for objname in guinames:
-            self.set_object(objname)"""
-
-            objects = template.format(self.format_tuple_names(indent=12))
-            setobj_def = f'\n{template_set_object}\n'
-        else:
-            # Regular init.
-            objects = self.init_codes(indent=8).lstrip()
-            setobj_def = ''
-        return template_app.format(
-            filepath=self.filepath,
-            mainwindow=self.get_main_window().name,
-            objects=objects,
-            set_object_def=setobj_def,
-            signaldefs=self.signal_defs(indent=4).rstrip(),
-        )
-
     def get_content(self, lib_mode=False):
         """ Renders the main template with current GladeFile info.
             Returns a string that can be written to file.
@@ -186,7 +150,9 @@ class GladeFile(object):
                     requires=self.init_requires(),
                     date=datetime.today().strftime('%m-%d-%Y')
                 ),
-                self.get_class_content(),
+                self.main_win.get_class_content(
+                    dynamic_init=self.dynamic_init,
+                ),
             ))
         return '\n\n'.join((
             template_header.format(
@@ -194,7 +160,9 @@ class GladeFile(object):
                 date=datetime.today().strftime('%m-%d-%Y')
             ),
             template_body.format(
-                class_def=self.get_class_content(),
+                class_def=self.main_win.get_class_content(
+                    dynamic_init=self.dynamic_init,
+                ),
             ),
         ))
 
@@ -231,20 +199,6 @@ class GladeFile(object):
         # Can't find a 'main' window. Return the first one.
         return ObjectApp.from_object_info(windows[0], filepath=self.filepath)
 
-    def init_codes(self, indent=12):
-        """ Returns concatenated init code for all objects. """
-        spacing = ' ' * indent
-        joiner = '\n{}'.format(spacing).join
-        # Sorts the initialization code based on object name.
-        initcodes = []
-        for objname in self.names():
-            obj = self.get_object(objname)
-            initcodes.append(obj.init_code())
-
-        return '{}{}'.format(
-            spacing,
-            joiner(initcodes))
-
     def init_requires(self):
         """ Returns init code for all extra Requires. """
         return '\n'.join(r.init_code() for r in self.extra_requires())
@@ -272,44 +226,32 @@ class GladeFile(object):
 
     def objects_all(self):
         """ This will return ALL objects, without any hierarchy. """
-        if not self.tree:
+        if self.tree is None:
             return []
-        objectelems = self.tree.xpath(self.xpath_object)
+        objectelems = self.tree.xpath(xpath_object)
         if not objectelems:
             raise ValueError('No objects found.')
 
-        objects = [ObjectInfo.from_element(e) for e in objectelems]
-        # Remove separator objects.
-        return [o for o in objects if o and not o.name.startswith('<')]
+        # Remove separator/ignored objects.
+        return ObjectInfo.map_elements(objectelems)
 
     def objects_requires(self):
         """ Returns all Require()s found in the tree. """
-        if not self.tree:
+        if self.tree is None:
             return []
-        requireselems = self.tree.xpath(self.xpath_requires)
+        requireselems = self.tree.xpath(xpath_requires)
         if not requireselems:
             return []
         return [Requires.from_element(e) for e in requireselems]
 
     def objects_top_level(self):
         """ Returns only top-level ObjectInfo()s. """
-        if not self.tree:
+        if self.tree is None:
             return []
         objectelems = self.tree.findall('object')
         objects = [ObjectInfo.from_element(e) for e in objectelems]
         # Remove separator objects.
-        return [o for o in objects if o and not o.name.startswith('<')]
-
-    def signal_defs(self, indent=4):
-        """ Returns concatenated signal definitions for all objects. """
-        # Sort the signal defs by object name.
-        signaldefs = []
-        for objname in self.names():
-            o = self.get_object(objname)
-            signaldef = o.signal_defs(indent=indent)
-            if signaldef.strip():
-                signaldefs.append(signaldef)
-        return '\n\n'.join(signaldefs)
+        return [o for o in objects if o and not o.is_ignored()]
 
     def write_file(self, filepath=None):
         """ Write parsed info to a file. """
@@ -322,25 +264,22 @@ class GladeFile(object):
         return filepath
 
 
-class GladeChild(object):
-    """ Holds information about a child window. """
-    pass
-
-
 class ObjectInfo(object):
     """ Holds information about a widget/object and it's signals, with helper
         methods.
     """
     def __init__(
             self, name=None, widget=None, objects=None, signals=None,
-            tree=None):
+            siblings=None, tree=None):
         self.name = name
         self.is_separator = self.name and self.name.startswith('<')
         self.widget = widget
         self.signals = signals or []
-        self.tree = tree or None
+        self.tree = None if tree is None else tree
         # Child objects.
         self.objects = objects or []
+        # Sibling objects.
+        self.siblings = siblings or []
 
     def __repr__(self):
         """ Return a repr() for this object and it's signal handlers. """
@@ -362,13 +301,12 @@ class ObjectInfo(object):
         # Children.
         children_objs = []
         for childelem in element.findall('child'):
-            for childobjelem in childelem.findall('object'):
-                child_obj = cls.from_element(childobjelem)
-                if child_obj:
-                    children_objs.append(child_obj)
+            children_objs.extend(
+                ObjectInfo.map_elements(childelem.findall('object'))
+            )
 
         # Signal handlers.
-        signalelems = element.findall('signal')
+        signalelems = element.xpath(xpath_signal)
         if signalelems:
             signals = []
             for sigelem in signalelems:
@@ -382,11 +320,20 @@ class ObjectInfo(object):
                     signals.append(handler)
         else:
             signals = []
+
+        # Siblings
+        sibling_elems = [
+            e
+            for e in element.getparent().findall('object')
+            if e.get('id', None) != objname
+        ]
+        siblings = ObjectInfo.map_elements(sibling_elems)
         objinfo = cls(
             name=objname,
             widget=widget,
             objects=children_objs,
             signals=signals,
+            siblings=siblings,
             tree=element,
         )
         return objinfo
@@ -401,20 +348,51 @@ class ObjectInfo(object):
     def has_children(self):
         return bool(self.objects)
 
-    def init_code(self):
+    def init_code(self, indent=0):
         """ Return string to initialize this object.
             Example: self.winMain = self.builder.get_object('winMain')
         """
-        template = 'self.{name} = self.builder.get_object(\'{name}\')'
-        return template.format(name=self.name)
+        template = '{spaces}self.{name} = self.builder.get_object(\'{name}\')'
+        return template.format(spaces=' ' * indent, name=self.name)
 
-    def init_codes(self):
+    def init_codes(self, indent=0, objects=None):
         """ Return a string to initialize all child objects. """
-        return '\n'.join(o.init_code() for o in self.objects)
+        return '\n'.join(sorted(
+            o.init_code(indent=indent)
+            for o in objects or self.objects
+        ))
 
-    def names(self):
+    def is_ignored(self):
+        """ Returns True if this object should be ignored when generating
+            init code, for Separators and GtkBoxes.
+        """
+        ignored_classes = ('GtkBox', )
+        return self.name.startswith('<') or (self.widget in ignored_classes)
+
+    @classmethod
+    def map_elements(cls, elements):
+        for elem in elements:
+            o = cls.from_element(elem)
+            if (not o) or o.is_ignored():
+                continue
+            yield o
+
+    def names(self, all_objects=False):
         """ Return a list of all object names. """
-        return sorted([o.name for o in self.objects])
+        return sorted([
+            o.name
+            for o in (self.objects_all() if all_objects else self.objects)
+        ])
+
+    def objects_all(self):
+        """ This will return ALL objects, without any hierarchy. """
+        if self.tree is None:
+            return []
+        objectelems = self.tree.xpath(xpath_object)
+        if not objectelems:
+            return []
+
+        return list(ObjectInfo.map_elements(objectelems))
 
     def repr_fmt(self, indent=0):
         return '\n'.join(self.repr_lines(indent=indent))
@@ -453,23 +431,32 @@ class ObjectInfo(object):
         return sorted((x.handler for x in self.signals))
 
 
-class ObjectApp(ObjectInfo):
+class ObjectClass(ObjectInfo):
+    """ Holds information about an ObjectInfo that should generate a separate
+        class definition.
+    """
+    use_class_name = None
+
     def __init__(
             self, filepath=None, name=None, widget=None, objects=None,
-            signals=None, tree=None):
+            signals=None, siblings=None, tree=None):
         super().__init__(
             name=name,
             widget=widget,
             objects=objects,
             signals=signals,
+            siblings=siblings,
             tree=tree,
         )
         self.filepath = filepath or None
 
-    def format_tuple_names(self, indent=12):
+    def format_tuple_names(self, names, indent=12):
         """ Format object names as if they were inside a tuple definition. """
-        fmtname = '{space}\'{{name}}\','.format(space=' ' * indent)
-        return '\n'.join((fmtname.format(name=n) for n in self.names()))
+        spaces = ' ' * indent
+        return '\n'.join((
+            f'{spaces}\'{n}\','
+            for n in names
+        ))
 
     @classmethod
     def from_object_info(cls, objinfo, filepath=None):
@@ -482,11 +469,12 @@ class ObjectApp(ObjectInfo):
             name=objinfo.name,
             widget=objinfo.widget,
             objects=objinfo.objects,
+            siblings=objinfo.siblings,
             signals=objinfo.signals,
             tree=objinfo.tree,
         )
 
-    def get_class_content(self, dynamic_init=False):
+    def get_class_content(self, dynamic_init=False, objects=None):
         """ Renders the app template with current GladeFile info.
             Returns a string that can be written to file.
         """
@@ -496,19 +484,56 @@ class ObjectApp(ObjectInfo):
         )
         for objname in guinames:
             self.set_object(objname)"""
-
-            objects = template.format(self.format_tuple_names(indent=12))
+            objects = template.format(
+                self.format_tuple_names(
+                    objects or self.objects_all(),
+                    indent=12
+                )
+            )
             setobj_def = f'\n{template_set_object}\n'
         else:
             # Regular init.
-            objects = self.init_codes(indent=8).lstrip()
+            objects = self.init_codes(
+                indent=8,
+                objects=objects or self.objects_all(),
+            ).lstrip()
             setobj_def = ''
+
         return template_cls.format(
-            classname=self.widget,
+            classname=self.use_class_name or self.name.title(),
+            filepath=self.filepath,
+            widget=self.widget.replace('Gtk', ''),
             objects=objects,
             set_object_def=setobj_def,
+            init_end=self.init_end() or '',
             signaldefs=self.signal_defs(indent=4).rstrip(),
         )
+
+    def init_end(self):
+        return None
+
+
+class ObjectApp(ObjectClass):
+    """ Holds information about the main App class, which in turn contains
+        possible children with separate classes.
+    """
+    use_class_name = 'App'
+
+    def get_class_content(self, dynamic_init=False, objects=None):
+        if not objects:
+            # Use object_all() and siblings for the App class.
+            objects = self.objects_all()
+            # Sibling init code should be 'self.thing = Thing()',
+            # ....not builder.get_object('thing')
+            # Also, the classes need to be generated.
+            objects.extend(self.siblings)
+        return super().get_class_content(
+            dynamic_init=dynamic_init,
+            objects=objects,
+        )
+
+    def init_end(self):
+        return f'self.{self.name}.show_all()'
 
 
 class Requires(object):
@@ -641,3 +666,10 @@ class SignalHandler(object):
             docs=docs,
             eventargs=eventargs,
             content=content)
+
+
+def debug(*args, **kwargs):
+    if not DEBUG:
+        return None
+    kwargs['file'] = sys.stderr
+    print(*args, **kwargs)

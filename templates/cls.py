@@ -1,8 +1,20 @@
-class App(Gtk.Window):
+# Lines with '# ignore' at the end are not part of the template. # ignore
+# Template placeholders and other globals are set to None so this # ignore
+# can be linted while editing. # ignore
+classname = None  # ignore
+Gtk = None  # ignore
+os = None  # ignore
+sys = None  # ignore
+objects = None  # ignore
+set_object_def = None  # ignore
+signaldefs = None  # ignore
+
+
+class {classname}(Gtk.{widget}):
     """ Main window with all components. """
 
     def __init__(self):
-        Gtk.Window.__init__(self)
+        Gtk.{widget}.__init__(self)
         self.builder = Gtk.Builder()
         gladefile = '{filepath}'
         if not os.path.exists(gladefile):
@@ -21,7 +33,6 @@ class App(Gtk.Window):
         # Connect all signals.
         self.builder.connect_signals(self)
 
-        # Show the main window.
-        self.{mainwindow}.show_all()
+        {init_end}
 {set_object_def}
 {signaldefs}

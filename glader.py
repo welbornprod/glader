@@ -17,14 +17,36 @@ try:
 except ImportError as eximp:
     import_fail(eximp)
 
+try:
+    from pygments import highlight as pyg_highlight
+    from pygments.lexers import get_lexer_by_name
+    from pygments.formatters import Terminal256Formatter
+except ImportError:
+    highlight_warn = 'You must `pip install pygments`.'
+    has_pygments = False
+
+    def highlight_code(code):
+        return code
+else:
+    # For the --highlight option, when pygments is available.
+    pyg_lexer = get_lexer_by_name('python3')
+    pyg_formatter = Terminal256Formatter(bg='dark', style='monokai')
+    highlight_warn = ''
+    has_pygments = True
+
+    def highlight_code(code):
+        return pyg_highlight(code, pyg_lexer, pyg_formatter).rstrip()
+
+
 SCRIPT = os.path.split(os.path.abspath(sys.argv[0]))[1]
 SCRIPTDIR = os.path.abspath(sys.path[0])
 
-USAGESTR = """{versionstr}
+USAGESTR = f"""{VERSIONSTR}
     Usage:
-        {script} -h | -v
-        {script} [FILE] [OUTFILE] [-D] [-d] [-g] [-l]
-        {script} FILE OUTFILE -o [-D] [-d] [-l]
+        {SCRIPT} -h | -v
+        {SCRIPT} [FILE] [OUTFILE] [-D] [-d] [-g] [-l]
+        {SCRIPT} FILE OUTFILE -o [-D] [-d] [-l]
+        {SCRIPT} FILE -H [-D] [-d] [-l]
 
     Options:
         FILE            : Glade file to parse.
@@ -35,13 +57,15 @@ USAGESTR = """{versionstr}
         -g,--gui        : Force use of a GUI, even when an output file is given.
                           You still have to use the 'Save' button to apply
                           changes.
+        -H,--highlight  : Syntax highlight the generated code and print to
+                          stdout. {highlight_warn}
         -h,--help       : Show this help message.
         -l,--lib        : Generate a usable Gtk.Window class only, not a
                           script.
         -o,--overwrite  : Overwrite existing files without confirmation.
         -v,--version    : Show version.
 
-""".format(script=SCRIPT, versionstr=VERSIONSTR)
+"""
 
 DEBUG = ('-D' in sys.argv) or ('--debug' in sys.argv)
 
@@ -52,10 +76,9 @@ def main(argd):
     if filepath and (not os.path.exists(filepath)):
         print('\nFile does not exist: {}'.format(filepath))
         return 1
-
-    outfile = argd['OUTFILE']
+    outfile = '-' if argd['--highlight'] else argd['OUTFILE']
     # Automatic command line when outputfile is given, unless --gui is used.
-    if outfile and not argd['--gui']:
+    if (argd['--highlight'] or outfile) and not argd['--gui']:
         # Cmdline version.
         return do_cmdline(
             filepath,
@@ -63,6 +86,7 @@ def main(argd):
             dynamic_init=argd['--dynamic'],
             lib_mode=argd['--lib'],
             overwrite=argd['--overwrite'],
+            highlight=argd['--highlight'],
         )
 
     # Full gui. Function exits the program when finished.
@@ -85,8 +109,11 @@ def confirm(question):
 
 def do_cmdline(
         filepath, outputfile=None, dynamic_init=False, lib_mode=False,
-        overwrite=False):
+        overwrite=False, highlight=False):
     """ Just run the cmdline version. """
+    if not filepath:
+        print_err('\nNo filepath provided!')
+        return 1
     if outputfile and os.path.exists(outputfile) and (not overwrite):
         msg = '\nFile exists: {}\n\nOverwrite it?'.format(outputfile)
         if not confirm(msg):
@@ -101,7 +128,7 @@ def do_cmdline(
     content = fileinfo.get_content(lib_mode=lib_mode)
     if outputfile.startswith('-'):
         # User wants stdout.
-        print(content)
+        print(highlight_code(content) if highlight else content)
     else:
         try:
             with open(outputfile, 'w')as f:
