@@ -8,6 +8,8 @@ import stat
 import sys
 from datetime import datetime
 
+from glader_templates import get_template
+
 NAME = 'Glader'
 __version__ = '0.2.1'
 VERSIONSTR = '{} v. {}'.format(NAME, __version__)
@@ -24,7 +26,10 @@ def import_fail(err):
         'The import error was:',
         '    {err}\n'
     )
-    print('\n'.join(msglines).format(namever=VERSIONSTR, err=err))
+    print(
+        '\n'.join(msglines).format(namever=VERSIONSTR, err=err),
+        file=sys.stderr,
+    )
     sys.exit(1)
 
 
@@ -38,11 +43,19 @@ try:
 except ImportError as eximp:
     import_fail(eximp)
 
-
 CONFIGFILE = os.path.join(sys.path[0], 'glader.conf')
 settings = EasySettings(CONFIGFILE)
 settings.name = NAME
 settings.version = __version__
+
+# Template for shebang/imports.
+template_header = get_template('header')
+# Template for the executable section.
+template_body = get_template('body')
+# Class def for main Gtk.Window.
+template_app = get_template('app')
+# Function definition for set_object() when dynamic init is used.
+template_set_object = get_template('set_object', indent=4)
 
 
 def debug(*args, **kwargs):
@@ -63,89 +76,13 @@ class GladeFile(object):
     """
     # Xpath to find all <object> elements in a glade file.
     xpath_object = CSSSelector('object').path
+    # Xpath to find all <requires> elements.
+    xpath_requires = CSSSelector('requires').path
 
-    # Main template for output file.
-    template_header = """
-#!/usr/bin/env python3
-\"\"\"
-    ...
-    {date}
-\"\"\"
-
-import os
-import sys
-from gi import require_version as gi_require_version
-gi_require_version('Gtk', '3.0')
-from gi.repository import Gtk
-""".strip()
-
-    template_body = """
-NAME = 'GtkApp'
-__version__ = '0.0.1'
-VERSIONSTR = '{{}} v. {{}}'.format(NAME, __version__)
-
-{class_def}
-
-def main():
-    \"\"\" Main entry point for the program. \"\"\"
-    app = App()  # noqa
-    return Gtk.main()
-
-
-if __name__ == '__main__':
-    mainret = main()
-    sys.exit(mainret)
-""".strip()
-
-    # Template for class only (lib mode)
-    template_class = """
-class App(Gtk.Window):
-    \"\"\" Main window with all components. \"\"\"
-
-    def __init__(self):
-        Gtk.Window.__init__(self)
-        self.builder = Gtk.Builder()
-        gladefile = '{filename}'
-        if not os.path.exists(gladefile):
-            # Look for glade file in this project's directory.
-            gladefile = os.path.join(sys.path[0], gladefile)
-
-        try:
-            self.builder.add_from_file(gladefile)
-        except Exception as ex:
-            print('\\nError building main window!\\n{{}}'.format(ex))
-            sys.exit(1)
-
-        # Get gui objects
-{objects}
-
-        # Connect all signals.
-        self.builder.connect_signals(self)
-
-        # Show the main window.
-        self.{mainwindow}.show_all()
-
-{set_object_def}{signaldefs}
-""".strip()
-
-    # Function definition for set_object() when dynamic init is used.
-    set_object_def = """
-    def set_object(self, objname):
-        \"\"\" Try building an object by it's name. \"\"\"
-
-        if objname:
-            obj = self.builder.get_object(objname)
-            if obj:
-                setattr(self, objname, obj)
-            else:
-                print('\\nError setting object!: {{}}'.format(objname))
-
-"""
-
-    def __init__(self, filename=None, dynamic_init=False):
+    def __init__(self, filepath=None, dynamic_init=False):
         """ Create a GladeFile to generate code from.
             Arguments:
-                filename      : File to parse.
+                filepath      : File to parse.
                 dynamic_init  : If true, generated code will dynamically
                                 create objects:
                                     objects = ('obj1', 'obj2')
@@ -157,13 +94,18 @@ class App(Gtk.Window):
 
                                 Both achieve the same end result.
         """
-        self.filename = filename
+        self.filepath = filepath
         self.dynamic_init = dynamic_init
 
-        if filename:
-            self.objects = GladeFile.objects_from_glade(filename)
-        else:
-            self.objects = []
+        self.tree = None
+        self.top_levels = []
+        self.objects = []
+        self.requires = []
+        if filepath:
+            self.tree = etree.parse(filepath)
+            self.top_levels = self.top_levels_from_tree(self.tree)
+            self.objects = self.objects_from_tree(self.tree)
+            self.requires = self.requires_from_tree(self.tree)
 
     def __bool__(self):
         """ bool(GladeFile) is based on object count.
@@ -178,12 +120,32 @@ class App(Gtk.Window):
     def __str__(self):
         """ Return a str() for this GladeFile. """
         return (
-            '{filename}: {objects} objects with {handlers} handlers'.format(
-                filename=self.filename,
+            '{filepath}: {objects} objects with {handlers} handlers'.format(
+                filepath=self.filepath,
                 objects=len(self.objects),
                 handlers=sum((len(o.signals) for o in self.objects))
             )
         )
+
+    def extra_requires(self):
+        """ Returns any extra Requires (not Gtk, and not empty). """
+        return [r for r in self.requires if r.lib and (r.lib != 'gtk+')]
+
+    def extra_requires_msg(self):
+        """ Returns a warning message about extra Requires if any are found,
+            otherwise returns an empty string.
+        """
+        reqs = self.extra_requires()
+        if not reqs:
+            return ''
+        return '\n'.join((
+            'This file depends on extra libraries:',
+            '\n'.join(f'    {r.init_code()}' for r in reqs),
+            '\nYou may need to register them with:',
+            '    GObject.type_register(<widget class>)',
+            '\nYou may also need to use a different name in the',
+            'gi_require_version() call.',
+        ))
 
     def format_tuple_names(self, indent=12):
         """ Format object names as if they were inside a tuple definition. """
@@ -195,20 +157,20 @@ class App(Gtk.Window):
             Returns a string that can be written to file.
         """
         if self.dynamic_init:
-            template = """        guinames = (
+            template = """guinames = (
 {}
         )
         for objname in guinames:
             self.set_object(objname)"""
 
             objects = template.format(self.format_tuple_names(indent=12))
-            setobj_def = self.set_object_def
+            setobj_def = template_set_object
         else:
             # Regular init.
-            objects = self.init_codes(indent=8)
+            objects = self.init_codes(indent=8).lstrip()
             setobj_def = ''
-        return self.template_class.format(
-            filename=self.filename,
+        return template_app.format(
+            filepath=self.filepath,
             mainwindow=self.get_main_window(),
             objects=objects,
             set_object_def=setobj_def,
@@ -221,16 +183,18 @@ class App(Gtk.Window):
         """
         if lib_mode:
             return '\n\n'.join((
-                self.template_header.format(
+                template_header.format(
+                    requires=self.init_requires(),
                     date=datetime.today().strftime('%m-%d-%Y')
                 ),
                 self.get_class_content(),
             ))
         return '\n\n'.join((
-            self.template_header.format(
+            template_header.format(
+                requires=self.init_requires(),
                 date=datetime.today().strftime('%m-%d-%Y')
             ),
-            self.template_body.format(
+            template_body.format(
                 class_def='\n{}\n'.format(self.get_class_content()),
             ),
         ))
@@ -276,31 +240,43 @@ class App(Gtk.Window):
             spacing,
             joiner(initcodes))
 
-    def make_executable(self, filename=None):
+    def init_requires(self):
+        """ Returns init code for all extra Requires. """
+        return '\n'.join(r.init_code() for r in self.extra_requires())
+
+    def make_executable(self, filepath=None):
         """ Make a file executable, by setting mode 774. """
-        filename = filename or self.filename
+        filepath = filepath or self.filepath
         # chmod 774
         mode774 = stat.S_IRWXU | stat.S_IRWXG | stat.S_IROTH
-        os.chmod(filename, mode774)
+        os.chmod(filepath, mode774)
 
     def names(self):
         """ Return a list of all object names. """
         return sorted([o.name for o in self.objects])
 
-    @classmethod
-    def objects_from_glade(cls, filename):
+    def objects_from_glade(self, filepath):
         """ Returns a list of ObjectInfo parsed from a glade file.
             Possibly raises errors from etree.parse(),
             or ValueError when no objects are found.
         """
-        tree = etree.parse(filename)
-        objectelems = tree.xpath(cls.xpath_object)
+        tree = etree.parse(filepath)
+        return self.objects_from_tree(tree)
+
+    def objects_from_tree(self, tree):
+        objectelems = tree.xpath(self.xpath_object)
         if not objectelems:
             raise ValueError('No objects found.')
 
         objects = [ObjectInfo.from_element(e) for e in objectelems]
         # Remove separator objects.
         return [o for o in objects if o and not o.name.startswith('<')]
+
+    def requires_from_tree(self, tree):
+        requireselems = tree.xpath(self.xpath_requires)
+        if not requireselems:
+            return []
+        return [Requires.from_element(e) for e in requireselems]
 
     def signal_defs(self, indent=4):
         """ Returns concatenated signal definitions for all objects. """
@@ -313,34 +289,40 @@ class App(Gtk.Window):
                 signaldefs.append(signaldef)
         return '\n\n'.join(signaldefs)
 
-    def write_file(self, filename=None):
+    def top_levels_from_tree(self, tree):
+        objectelems = tree.findall('object')
+        objects = [ObjectInfo.from_element(e) for e in objectelems]
+        # Remove separator objects.
+        return [o for o in objects if o and not o.name.startswith('<')]
+
+    def write_file(self, filepath=None):
         """ Write parsed info to a file. """
-        filename = filename or self.filename
+        filepath = filepath or self.filepath
         content = self.get_content()
-        with open(filename, 'w') as f:
+        with open(filepath, 'w') as f:
             f.write(content)
 
-        self.make_executable(filename)
-        return filename
+        self.make_executable(filepath)
+        return filepath
 
 
 class ObjectInfo(object):
-
     """ Holds information about a widget/object and it's signals, with helper
         methods.
     """
+    top_level = False
 
-    def __init__(self, name=None, widget=None, signals=None):
+    def __init__(self, name=None, widget=None, objects=None, signals=None):
         self.name = name
+        # Child objects.
+        self.is_separator = self.name and self.name.startswith('<')
+        self.objects = objects or []
         self.widget = widget
         self.signals = signals or []
 
     def __repr__(self):
         """ Return a repr() for this object and it's signal handlers. """
-        lines = ['{} ({}):'.format(self.name, self.widget)]
-        handlerfmt = '    {}'.format
-        lines.extend((handlerfmt(repr(x)) for x in self.signals))
-        return '\n'.join(lines)
+        return self.repr_fmt()
 
     @classmethod
     def from_element(cls, element):
@@ -354,6 +336,14 @@ class ObjectInfo(object):
             return None
         # Widget type.
         widget = element.get('class', None)
+
+        # Children.
+        children_objs = []
+        for childelem in element.findall('child'):
+            for childobjelem in childelem.findall('object'):
+                child_obj = cls.from_element(childobjelem)
+                if child_obj:
+                    children_objs.append(child_obj)
 
         # Signal handlers.
         signalelems = element.findall('signal')
@@ -369,7 +359,13 @@ class ObjectInfo(object):
                     signals.append(handler)
         else:
             signals = []
-        return cls(name=objname, widget=widget, signals=signals)
+        objinfo = cls(
+            name=objname,
+            widget=widget,
+            objects=children_objs,
+            signals=signals,
+        )
+        return objinfo
 
     def get_signal(self, name, default=None):
         """ Get signal handler by handler (signal.handler). """
@@ -384,6 +380,28 @@ class ObjectInfo(object):
         """
         template = 'self.{name} = self.builder.get_object(\'{name}\')'
         return template.format(name=self.name)
+
+    def init_codes(self):
+        """ Return a string to initialize all child objects. """
+        return '\n'.join(o.init_code() for o in self.objects)
+
+    def repr_fmt(self, indent=0):
+        return '\n'.join(self.repr_lines(indent=indent))
+
+    def repr_lines(self, indent=0):
+        spaces = ' ' * indent
+        lines = [
+            f'{spaces}{self.name} ({self.widget}):',
+        ]
+        lines.extend((
+            f'{spaces}    {x!r}'
+            for x in self.signals
+        ))
+        lines.extend((
+            f'{spaces}    {o.repr_fmt(indent=indent+4)}'
+            for o in self.objects
+        ))
+        return lines
 
     def signal_defs(self, indent=4):
         """ Return concatenated function definitions for all signal handlers,
@@ -404,8 +422,34 @@ class ObjectInfo(object):
         return sorted((x.handler for x in self.signals))
 
 
-class SignalHandler(object):
+class Requires(object):
+    """ Holds ifnormation and helper methods for a <requires> element. """
+    def __init__(self, lib=None, version=None):
+        self.lib = lib or ''
+        self.version = version or ''
 
+    def __bool__(self):
+        return self.lib or self.version
+
+    def __repr__(self):
+        return f'{type(self).__name__}: {self.lib!r} v. {self.version!r}'
+
+    @classmethod
+    def from_element(cls, element):
+        lib = element.get('lib', None)
+        ver = element.get('version', None)
+        libmap = {
+            'gtksourceview': 'GtkSource',
+        }
+        return cls(lib=libmap.get(lib, lib), version=ver)
+
+    def init_code(self):
+        if (not self.lib) or self.lib.startswith('gtk+'):
+            return None
+        return f'gi_require_version(\'{self.lib}\', \'{self.version}\')'
+
+
+class SignalHandler(object):
     """ Holds information and helper methods for a single signal handler. """
 
     def __init__(self, name=None, handler=None, widget=None, widgettype=None):

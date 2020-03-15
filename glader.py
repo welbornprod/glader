@@ -46,9 +46,9 @@ DEBUG = ('-D' in sys.argv) or ('--debug' in sys.argv)
 
 def main(argd):
     """ Main entry point, expects doctopt arg dict as argd """
-    filename = argd['FILE']
-    if filename and (not os.path.exists(filename)):
-        print('\nFile does not exist: {}'.format(filename))
+    filepath = argd['FILE']
+    if filepath and (not os.path.exists(filepath)):
+        print('\nFile does not exist: {}'.format(filepath))
         return 1
 
     outfile = argd['OUTFILE']
@@ -56,7 +56,7 @@ def main(argd):
     if outfile and not argd['--gui']:
         # Cmdline version.
         return do_cmdline(
-            filename,
+            filepath,
             outputfile=outfile,
             dynamic_init=argd['--dynamic'],
             lib_mode=argd['--lib'],
@@ -67,7 +67,7 @@ def main(argd):
         # No stdout is used for gui mode.
         outfile = None
     do_gui(
-        filename,
+        filepath,
         outputfile=outfile,
         dynamic_init=argd['--dynamic'],
         lib_mode=argd['--lib'],
@@ -80,7 +80,7 @@ def confirm(question):
     return ans.startswith('y')
 
 
-def do_cmdline(filename, outputfile=None, dynamic_init=False, lib_mode=False):
+def do_cmdline(filepath, outputfile=None, dynamic_init=False, lib_mode=False):
     """ Just run the cmdline version. """
     if outputfile and os.path.exists(outputfile):
         msg = '\nFile exists: {}\n\nOverwrite it?'.format(outputfile)
@@ -88,9 +88,9 @@ def do_cmdline(filename, outputfile=None, dynamic_init=False, lib_mode=False):
             print('\nUser cancelled.\n')
             return 1
 
-    fileinfo = get_gladeinfo(filename, dynamic_init)
+    fileinfo = get_gladeinfo(filepath, dynamic_init)
     if not fileinfo:
-        print('\nNo usable info was found for this file: {}'.format(filename))
+        print('\nNo usable info was found for this file: {}'.format(filepath))
         return 1
 
     content = fileinfo.get_content(lib_mode=lib_mode)
@@ -103,42 +103,50 @@ def do_cmdline(filename, outputfile=None, dynamic_init=False, lib_mode=False):
                 f.write(content)
             print('File was generated: {}'.format(outputfile))
         except (PermissionError, EnvironmentError) as ex:
-            print('\nError writing file: {}\n{}'.format(outputfile, ex))
+            print_err('\nError writing file: {}\n{}'.format(outputfile, ex))
             return 1
         try:
             fileinfo.make_executable(outputfile)
             print('Mode +rwx (774) was set to make it executable.')
         except (PermissionError, EnvironmentError) as experm:
-            print('Unable to make it executable:\n  {}'.format(experm))
+            print_err('Unable to make it executable:\n  {}'.format(experm))
 
+    reqs = fileinfo.extra_requires_msg()
+    if reqs:
+        print_err(f'\n{reqs}')
     return 0 if content else 1
 
 
 def do_gui(
-        filename=None, outputfile=None, dynamic_init=False, lib_mode=False):
+        filepath=None, outputfile=None, dynamic_init=False, lib_mode=False):
     """ Run the full gui. """
     # This function will exit the program when finished.
     gui_main(
-        filename=filename,
+        filepath=filepath,
         outputfile=outputfile,
         dynamic_init=dynamic_init,
         lib_mode=lib_mode,
     )
 
 
-def get_gladeinfo(filename, dynamic_init=False):
+def get_gladeinfo(filepath, dynamic_init=False):
     """ Retrieve widget/object info from a glade file. """
     try:
         gladeinfo = GladeFile(
-            filename,
+            filepath,
             dynamic_init=dynamic_init,
         )
     except Exception as ex:
-        print('\nError parsing glade file!: {}\n{}'.format(filename, ex))
+        print('\nError parsing glade file!: {}\n{}'.format(filepath, ex))
         if DEBUG:
             print_exc()
         return None
     return gladeinfo
+
+
+def print_err(*args, **kwargs):
+    kwargs['file'] = kwargs.get('file', sys.stderr)
+    print(*args, **kwargs)
 
 
 def print_exc():

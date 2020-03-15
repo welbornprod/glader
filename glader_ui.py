@@ -27,7 +27,7 @@ class App(Gtk.Window):
     """ Main window with all components. """
 
     def __init__(
-            self, filename=None, outputfile=None,
+            self, filepath=None, outputfile=None,
             dynamic_init=False, lib_mode=False):
         Gtk.Window.__init__(self)
         self.builder = Gtk.Builder()
@@ -44,12 +44,18 @@ class App(Gtk.Window):
         # A GladeFile() instance set by generate_code().
         self.glade = None
 
+        # Requirement warnings issued already in generate_code().
+        # If a file needs a requirement warning, the warning will be issued
+        # and it's filepath/requirements saved so that the warning is only
+        # issued once per file (with the same requirements).
+        self.require_warned = {}
+
         # Get gui objects
         self.btnFileOpen = self.builder.get_object('btnFileOpen')
-        if filename:
+        if filepath:
             # This will automatically trigger code generation
             # because of btnFileOpen_selection_changed_cb()
-            self.btnFileOpen.set_filename(filename)
+            self.btnFileOpen.set_filepath(filepath)
 
         self.btnGenerate = self.builder.get_object('btnGenerate')
         self.btnSave = self.builder.get_object('btnSave')
@@ -89,14 +95,16 @@ class App(Gtk.Window):
         # Map from theme id to StyleScheme.
         self.themes = {
             tid: self.themeManager.get_scheme(tid)
-            for tid in self.themeManager.get_scheme_ids()}
+            for tid in self.themeManager.get_scheme_ids()
+        }
         # Holds the currently selected theme info.
         self.theme = None
         # Load theme from config if available.
         if not self.set_theme_config():
             # Use first preferred theme if available.
             themeprefs = (
-                'oblivion', 'tomorrownighteighties', 'twilight', 'kate')
+                'oblivion', 'tomorrownighteighties', 'twilight', 'kate'
+            )
             for themeid in themeprefs:
                 theme = self.themes.get(themeid, None)
                 if theme:
@@ -119,7 +127,7 @@ class App(Gtk.Window):
             parent=self.winMain,
             title='Select an output file',
             filters=(('Python Files', '*.py'), ('All Files', '*')),
-            filename=outputfile
+            filepath=outputfile
         )
         # Connect all signals.
         self.builder.connect_signals(self)
@@ -129,9 +137,12 @@ class App(Gtk.Window):
 
     def btnFileOpen_selection_changed_cb(self, widget, user_data=None):
         """ Handler for btnFileOpen.selection-changed. """
-        filename = widget.get_filename()
-        if filename:
+        filepath = widget.get_filepath()
+        if filepath:
             # Automatically generate code for selected files.
+            if self.require_warned.get(filepath, None):
+                # Manually re-opening the file resets the requirement warnings.
+                self.require_warned[filepath] = None
             self.generate_code()
 
     def btnGenerate_activate_cb(self, widget, user_data=None):
@@ -203,22 +214,22 @@ class App(Gtk.Window):
 
     def generate_code(self):
         """ Does the actual glade parsing/code generation. """
-        filename = self.btnFileOpen.get_filename()
-        if not filename:
+        filepath = self.btnFileOpen.get_filepath()
+        if not filepath:
             self.msgs.warn('Please select an input file.')
             return None
-        elif not os.path.exists(filename):
+        elif not os.path.exists(filepath):
             self.glade = None
             self.bufferOutput.set_text('')
-            self.msgs.warn('Glade file does not exist: {}'.format(filename))
+            self.msgs.warn('Glade file does not exist: {}'.format(filepath))
             return None
 
         dynamic = self.chkDynamic.get_active()
         try:
-            gladefile = GladeFile(filename=filename, dynamic_init=dynamic)
+            gladefile = GladeFile(filepath=filepath, dynamic_init=dynamic)
         except Exception as ex:
             errfmt = 'Error parsing glade file:\n   {}\n\n{}'
-            self.msgs.error(errfmt.format(filename, ex))
+            self.msgs.error(errfmt.format(filepath, ex))
             self.glade = None
             return None
 
@@ -226,6 +237,10 @@ class App(Gtk.Window):
         content = gladefile.get_content(lib_mode=lib_mode)
         self.bufferOutput.set_text(content)
         self.glade = gladefile
+        reqs = gladefile.extra_requires_msg()
+        if reqs and (self.require_warned.get(filepath, None) != reqs):
+            self.require_warned[filepath] = reqs
+            self.msgs.warn(reqs)
 
     def get_theme_by_name(self, name):
         """ Retrieves a StyleScheme from self.themes by it's proper name.
@@ -311,12 +326,12 @@ class FileDialogSave(object):
 
     """ A quick and easy file save dialog. """
 
-    def __init__(self, parent=None, title=None, filters=None, filename=None):
+    def __init__(self, parent=None, title=None, filters=None, filepath=None):
         self.parent = parent
         self.title = title or 'Select a file name'
         self.filters = filters or (('All Files', '*'),)
-        # Initial filename to show.
-        self.filename = filename
+        # Initial filepath to show.
+        self.filepath = filepath
 
     def _build_filters(self, filters=None):
         """ build dlgwindow filters from list/tuple of filters
@@ -343,11 +358,12 @@ class FileDialogSave(object):
             Gtk.FileChooserAction.SAVE,
             (
                 '_Cancel', Gtk.ResponseType.CANCEL,
-                '_Save', Gtk.ResponseType.OK)
+                '_Save', Gtk.ResponseType.OK
+            )
         )
         dlg.set_default_response(Gtk.ResponseType.OK)
-        if self.filename:
-            dlg.set_filename(self.filename)
+        if self.filepath:
+            dlg.set_filepath(self.filepath)
 
         # build filters
         for dlgfilter in self._build_filters():
@@ -358,7 +374,7 @@ class FileDialogSave(object):
 
         # Show Dialog, get response
         response = dlg.run()
-        respfile = dlg.get_filename()
+        respfile = dlg.get_filepath()
         dlg.destroy()
         return respfile if response == Gtk.ResponseType.OK else None
 
@@ -429,10 +445,10 @@ def inspect_object(o):
 
 
 def gui_main(
-        filename=None, outputfile=None, dynamic_init=False, lib_mode=False):
+        filepath=None, outputfile=None, dynamic_init=False, lib_mode=False):
     """ Main entry point for the program. """
     app = App(  # noqa
-        filename=filename,
+        filepath=filepath,
         outputfile=outputfile,
         dynamic_init=dynamic_init,
         lib_mode=lib_mode,
