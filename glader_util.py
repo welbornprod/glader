@@ -11,7 +11,7 @@ from datetime import datetime
 from glader_templates import get_template
 
 NAME = 'Glader'
-__version__ = '0.2.1'
+__version__ = '0.2.2'
 VERSIONSTR = '{} v. {}'.format(NAME, __version__)
 
 # Set with -D,--debug command-line options.
@@ -49,13 +49,15 @@ settings.name = NAME
 settings.version = __version__
 
 # Template for shebang/imports.
-template_header = get_template('header')
+template_header = get_template('header').rstrip()
 # Template for the executable section.
 template_body = get_template('body')
 # Class def for main Gtk.Window.
-template_app = get_template('app')
+template_app = get_template('app').rstrip()
+# Class def for top level classes.
+template_cls = get_template('cls').rstrip()
 # Function definition for set_object() when dynamic init is used.
-template_set_object = get_template('set_object', indent=4)
+template_set_object = get_template('set_object', indent=4).rstrip()
 
 
 def debug(*args, **kwargs):
@@ -101,11 +103,7 @@ class GladeFile(object):
         self.top_levels = []
         self.objects = []
         self.requires = []
-        if filepath:
-            self.tree = etree.parse(filepath)
-            self.top_levels = self.top_levels_from_tree(self.tree)
-            self.objects = self.objects_from_tree(self.tree)
-            self.requires = self.requires_from_tree(self.tree)
+        self.parse_file(filepath)
 
     def __bool__(self):
         """ bool(GladeFile) is based on object count.
@@ -153,7 +151,7 @@ class GladeFile(object):
         return '\n'.join((fmtname.format(name=n) for n in self.names()))
 
     def get_class_content(self):
-        """ Renders the class template with current GladeFile info.
+        """ Renders the app template with current GladeFile info.
             Returns a string that can be written to file.
         """
         if self.dynamic_init:
@@ -164,7 +162,7 @@ class GladeFile(object):
             self.set_object(objname)"""
 
             objects = template.format(self.format_tuple_names(indent=12))
-            setobj_def = template_set_object
+            setobj_def = f'\n{template_set_object}\n'
         else:
             # Regular init.
             objects = self.init_codes(indent=8).lstrip()
@@ -174,7 +172,7 @@ class GladeFile(object):
             mainwindow=self.get_main_window(),
             objects=objects,
             set_object_def=setobj_def,
-            signaldefs=self.signal_defs(indent=4),
+            signaldefs=self.signal_defs(indent=4).rstrip(),
         )
 
     def get_content(self, lib_mode=False):
@@ -195,7 +193,7 @@ class GladeFile(object):
                 date=datetime.today().strftime('%m-%d-%Y')
             ),
             template_body.format(
-                class_def='\n{}\n'.format(self.get_class_content()),
+                class_def=self.get_class_content(),
             ),
         ))
 
@@ -212,7 +210,11 @@ class GladeFile(object):
             Returns '?MainWindow?' on failure, so any generated code
             will immediately raise an exception when ran.
         """
-        windows = [o.name for o in self.objects if 'win' in o.name.lower()]
+        windows = [
+            o.name
+            for o in self.objects
+            if ('win' in o.name.lower()) or ('Window' in o.widget)
+        ]
         if not windows:
             return '?MainWindow?'
         if len(windows) == 1:
@@ -255,16 +257,20 @@ class GladeFile(object):
         """ Return a list of all object names. """
         return sorted([o.name for o in self.objects])
 
-    def objects_from_glade(self, filepath):
-        """ Returns a list of ObjectInfo parsed from a glade file.
-            Possibly raises errors from etree.parse(),
-            or ValueError when no objects are found.
-        """
-        tree = etree.parse(filepath)
-        return self.objects_from_tree(tree)
+    def parse_file(self, filepath=None):
+        self.filepath = filepath
+        self.tree = None
+        if filepath:
+            self.tree = etree.parse(filepath)
+            self.top_levels = self.objects_top_level()
+            self.objects = self.objects_all()
+            self.requires = self.objects_requires()
 
-    def objects_from_tree(self, tree):
-        objectelems = tree.xpath(self.xpath_object)
+    def objects_all(self):
+        """ This will return ALL objects, without any hierarchy. """
+        if not self.tree:
+            return []
+        objectelems = self.tree.xpath(self.xpath_object)
         if not objectelems:
             raise ValueError('No objects found.')
 
@@ -272,11 +278,23 @@ class GladeFile(object):
         # Remove separator objects.
         return [o for o in objects if o and not o.name.startswith('<')]
 
-    def requires_from_tree(self, tree):
-        requireselems = tree.xpath(self.xpath_requires)
+    def objects_requires(self):
+        """ Returns all Require()s found in the tree. """
+        if not self.tree:
+            return []
+        requireselems = self.tree.xpath(self.xpath_requires)
         if not requireselems:
             return []
         return [Requires.from_element(e) for e in requireselems]
+
+    def objects_top_level(self):
+        """ Returns only top-level ObjectInfo()s. """
+        if not self.tree:
+            return []
+        objectelems = self.tree.findall('object')
+        objects = [ObjectInfo.from_element(e) for e in objectelems]
+        # Remove separator objects.
+        return [o for o in objects if o and not o.name.startswith('<')]
 
     def signal_defs(self, indent=4):
         """ Returns concatenated signal definitions for all objects. """
@@ -289,12 +307,6 @@ class GladeFile(object):
                 signaldefs.append(signaldef)
         return '\n\n'.join(signaldefs)
 
-    def top_levels_from_tree(self, tree):
-        objectelems = tree.findall('object')
-        objects = [ObjectInfo.from_element(e) for e in objectelems]
-        # Remove separator objects.
-        return [o for o in objects if o and not o.name.startswith('<')]
-
     def write_file(self, filepath=None):
         """ Write parsed info to a file. """
         filepath = filepath or self.filepath
@@ -306,19 +318,29 @@ class GladeFile(object):
         return filepath
 
 
+class GladeApp(object):
+    """ Holds information about the main window (Gtk.Window), with possible
+        GladeChilds.
+    """
+    pass
+
+
+class GladeChild(object):
+    """ Holds information about a child window. """
+    pass
+
+
 class ObjectInfo(object):
     """ Holds information about a widget/object and it's signals, with helper
         methods.
     """
-    top_level = False
-
     def __init__(self, name=None, widget=None, objects=None, signals=None):
         self.name = name
-        # Child objects.
         self.is_separator = self.name and self.name.startswith('<')
-        self.objects = objects or []
         self.widget = widget
         self.signals = signals or []
+        # Child objects.
+        self.objects = objects or []
 
     def __repr__(self):
         """ Return a repr() for this object and it's signal handlers. """
@@ -352,7 +374,8 @@ class ObjectInfo(object):
             for sigelem in signalelems:
                 handler = SignalHandler.from_element(
                     sigelem,
-                    widgettype=widget)
+                    widgettype=widget
+                )
 
                 if handler is not None:
                     # from_element() returns None for 'gtk_' signals.
@@ -373,6 +396,9 @@ class ObjectInfo(object):
             if h.handler == name:
                 return h
         return default
+
+    def has_children(self):
+        return bool(self.objects)
 
     def init_code(self):
         """ Return string to initialize this object.

@@ -24,20 +24,22 @@ USAGESTR = """{versionstr}
     Usage:
         {script} -h | -v
         {script} [FILE] [OUTFILE] [-D] [-d] [-g] [-l]
+        {script} FILE OUTFILE -o [-D] [-d] [-l]
 
     Options:
-        FILE           : Glade file to parse.
-        OUTFILE        : File name for output.
-                         If - is given, output will be printed to stdout.
-        -D,--debug     : Show more info on errors.
-        -d,--dynamic   : Use dynamic object initialization method.
-        -g,--gui       : Force use of a GUI, even when an output file is given.
-                         You still have to use the 'Save' button to apply
-                         changes.
-        -h,--help      : Show this help message.
-        -l,--lib       : Generate a usable Gtk.Window class only, not a
-                         script.
-        -v,--version   : Show version.
+        FILE            : Glade file to parse.
+        OUTFILE         : File name for output.
+                          If - is given, output will be printed to stdout.
+        -D,--debug      : Show more info on errors.
+        -d,--dynamic    : Use dynamic object initialization method.
+        -g,--gui        : Force use of a GUI, even when an output file is given.
+                          You still have to use the 'Save' button to apply
+                          changes.
+        -h,--help       : Show this help message.
+        -l,--lib        : Generate a usable Gtk.Window class only, not a
+                          script.
+        -o,--overwrite  : Overwrite existing files without confirmation.
+        -v,--version    : Show version.
 
 """.format(script=SCRIPT, versionstr=VERSIONSTR)
 
@@ -60,6 +62,7 @@ def main(argd):
             outputfile=outfile,
             dynamic_init=argd['--dynamic'],
             lib_mode=argd['--lib'],
+            overwrite=argd['--overwrite'],
         )
 
     # Full gui. Function exits the program when finished.
@@ -80,9 +83,11 @@ def confirm(question):
     return ans.startswith('y')
 
 
-def do_cmdline(filepath, outputfile=None, dynamic_init=False, lib_mode=False):
+def do_cmdline(
+        filepath, outputfile=None, dynamic_init=False, lib_mode=False,
+        overwrite=False):
     """ Just run the cmdline version. """
-    if outputfile and os.path.exists(outputfile):
+    if outputfile and os.path.exists(outputfile) and (not overwrite):
         msg = '\nFile exists: {}\n\nOverwrite it?'.format(outputfile)
         if not confirm(msg):
             print('\nUser cancelled.\n')

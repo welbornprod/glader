@@ -23,7 +23,5 @@ class App(Gtk.Window):
 
         # Show the main window.
         self.{mainwindow}.show_all()
-
-    {set_object_def}
-
+{set_object_def}
 {signaldefs}
