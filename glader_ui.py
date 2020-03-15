@@ -55,7 +55,7 @@ class App(Gtk.Window):
         if filepath:
             # This will automatically trigger code generation
             # because of btnFileOpen_selection_changed_cb()
-            self.btnFileOpen.set_filepath(filepath)
+            self.btnFileOpen.set_filename(filepath)
 
         self.btnGenerate = self.builder.get_object('btnGenerate')
         self.btnSave = self.builder.get_object('btnSave')
@@ -137,7 +137,7 @@ class App(Gtk.Window):
 
     def btnFileOpen_selection_changed_cb(self, widget, user_data=None):
         """ Handler for btnFileOpen.selection-changed. """
-        filepath = widget.get_filepath()
+        filepath = widget.get_filename()
         if filepath:
             # Automatically generate code for selected files.
             if self.require_warned.get(filepath, None):
@@ -214,7 +214,7 @@ class App(Gtk.Window):
 
     def generate_code(self):
         """ Does the actual glade parsing/code generation. """
-        filepath = self.btnFileOpen.get_filepath()
+        filepath = self.btnFileOpen.get_filename()
         if not filepath:
             self.msgs.warn('Please select an input file.')
             return None
@@ -363,7 +363,7 @@ class FileDialogSave(object):
         )
         dlg.set_default_response(Gtk.ResponseType.OK)
         if self.filepath:
-            dlg.set_filepath(self.filepath)
+            dlg.set_filename(self.filepath)
 
         # build filters
         for dlgfilter in self._build_filters():
@@ -374,7 +374,7 @@ class FileDialogSave(object):
 
         # Show Dialog, get response
         response = dlg.run()
-        respfile = dlg.get_filepath()
+        respfile = dlg.get_filename()
         dlg.destroy()
         return respfile if response == Gtk.ResponseType.OK else None
 

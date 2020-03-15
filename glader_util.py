@@ -103,6 +103,7 @@ class GladeFile(object):
         self.top_levels = []
         self.objects = []
         self.requires = []
+        self.main_win = None
         self.parse_file(filepath)
 
     def __bool__(self):
@@ -169,7 +170,7 @@ class GladeFile(object):
             setobj_def = ''
         return template_app.format(
             filepath=self.filepath,
-            mainwindow=self.get_main_window(),
+            mainwindow=self.get_main_window().name,
             objects=objects,
             set_object_def=setobj_def,
             signaldefs=self.signal_defs(indent=4).rstrip(),
@@ -211,22 +212,24 @@ class GladeFile(object):
             will immediately raise an exception when ran.
         """
         windows = [
-            o.name
+            o
             for o in self.objects
             if ('win' in o.name.lower()) or ('Window' in o.widget)
         ]
         if not windows:
-            return '?MainWindow?'
-        if len(windows) == 1:
-            # Only one win object.
-            return windows[0]
-        # Search for any 'main' window.
-        for winname in windows:
-            if 'main' in winname.lower():
-                return winname
+            return ObjectApp(name='?MainWindow?')
+
+        if len(windows) > 1:
+            # Search for any 'main' window.
+            for win in windows:
+                if 'main' in win.name.lower():
+                    return ObjectApp.from_object_info(
+                        win,
+                        filepath=self.filepath,
+                    )
 
         # Can't find a 'main' window. Return the first one.
-        return windows[0]
+        return ObjectApp.from_object_info(windows[0], filepath=self.filepath)
 
     def init_codes(self, indent=12):
         """ Returns concatenated init code for all objects. """
@@ -265,6 +268,7 @@ class GladeFile(object):
             self.top_levels = self.objects_top_level()
             self.objects = self.objects_all()
             self.requires = self.objects_requires()
+            self.main_win = self.get_main_window()
 
     def objects_all(self):
         """ This will return ALL objects, without any hierarchy. """
@@ -318,13 +322,6 @@ class GladeFile(object):
         return filepath
 
 
-class GladeApp(object):
-    """ Holds information about the main window (Gtk.Window), with possible
-        GladeChilds.
-    """
-    pass
-
-
 class GladeChild(object):
     """ Holds information about a child window. """
     pass
@@ -334,11 +331,14 @@ class ObjectInfo(object):
     """ Holds information about a widget/object and it's signals, with helper
         methods.
     """
-    def __init__(self, name=None, widget=None, objects=None, signals=None):
+    def __init__(
+            self, name=None, widget=None, objects=None, signals=None,
+            tree=None):
         self.name = name
         self.is_separator = self.name and self.name.startswith('<')
         self.widget = widget
         self.signals = signals or []
+        self.tree = tree or None
         # Child objects.
         self.objects = objects or []
 
@@ -387,6 +387,7 @@ class ObjectInfo(object):
             widget=widget,
             objects=children_objs,
             signals=signals,
+            tree=element,
         )
         return objinfo
 
@@ -410,6 +411,10 @@ class ObjectInfo(object):
     def init_codes(self):
         """ Return a string to initialize all child objects. """
         return '\n'.join(o.init_code() for o in self.objects)
+
+    def names(self):
+        """ Return a list of all object names. """
+        return sorted([o.name for o in self.objects])
 
     def repr_fmt(self, indent=0):
         return '\n'.join(self.repr_lines(indent=indent))
@@ -446,6 +451,64 @@ class ObjectInfo(object):
     def signal_handlers(self):
         """ Return a sorted list of signal handler names. """
         return sorted((x.handler for x in self.signals))
+
+
+class ObjectApp(ObjectInfo):
+    def __init__(
+            self, filepath=None, name=None, widget=None, objects=None,
+            signals=None, tree=None):
+        super().__init__(
+            name=name,
+            widget=widget,
+            objects=objects,
+            signals=signals,
+            tree=tree,
+        )
+        self.filepath = filepath or None
+
+    def format_tuple_names(self, indent=12):
+        """ Format object names as if they were inside a tuple definition. """
+        fmtname = '{space}\'{{name}}\','.format(space=' ' * indent)
+        return '\n'.join((fmtname.format(name=n) for n in self.names()))
+
+    @classmethod
+    def from_object_info(cls, objinfo, filepath=None):
+        """ Promote an ObjectInfo to a ObjectApp.
+            This is simply changing the class from ObjectInfo to ObjectApp,
+            to take advantage of it's helper methods for the main window.
+        """
+        return cls(
+            filepath=filepath,
+            name=objinfo.name,
+            widget=objinfo.widget,
+            objects=objinfo.objects,
+            signals=objinfo.signals,
+            tree=objinfo.tree,
+        )
+
+    def get_class_content(self, dynamic_init=False):
+        """ Renders the app template with current GladeFile info.
+            Returns a string that can be written to file.
+        """
+        if dynamic_init:
+            template = """guinames = (
+{}
+        )
+        for objname in guinames:
+            self.set_object(objname)"""
+
+            objects = template.format(self.format_tuple_names(indent=12))
+            setobj_def = f'\n{template_set_object}\n'
+        else:
+            # Regular init.
+            objects = self.init_codes(indent=8).lstrip()
+            setobj_def = ''
+        return template_cls.format(
+            classname=self.widget,
+            objects=objects,
+            set_object_def=setobj_def,
+            signaldefs=self.signal_defs(indent=4).rstrip(),
+        )
 
 
 class Requires(object):
