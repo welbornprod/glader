@@ -125,6 +125,9 @@ def do_cmdline(
         print('\nNo usable info was found for this file: {}'.format(filepath))
         return 1
 
+    print(repr(fileinfo))
+    sys.exit(1)
+
     content = fileinfo.get_content(lib_mode=lib_mode)
     if outputfile.startswith('-'):
         # User wants stdout.
