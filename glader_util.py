@@ -169,7 +169,7 @@ class GladeFile(object):
                 date=datetime.today().strftime('%m-%d-%Y')
             ),
             template_body.format(class_def=class_defs),
-        ))
+        )).replace('\n\n\n\n', '\n\n')
 
     def get_object(self, name, default=None):
         """ Retrieve an ObjectInfo by object name. """
@@ -440,18 +440,15 @@ class ObjectInfo(object):
             or if no signal handlers are present then return ''.
             Definitions are sorted by handler name.
         """
-        # Sort the signal definitions by handler name.
-        signaldefs = []
-        for handlername in self.signal_handlers():
-            signal = self.get_signal(handlername)
+        # Signal definitions, no dupes. First one wins.
+        signaldefs = {}
+        for signal in reversed(self.signals):
             signaldef = signal.signal_def(indent=indent)
-            if signaldef.strip():
-                signaldefs.append(signaldef)
-        return '\n\n'.join(signaldefs)
-
-    def signal_handlers(self):
-        """ Return a sorted list of signal handler names. """
-        return sorted(set((x.handler for x in self.signals)))
+            if not signaldef.strip():
+                continue
+            signaldefs[signal.handler] = signaldef
+        # Sort them.= by handler name.
+        return '\n\n'.join(signaldefs[k] for k in sorted(signaldefs))
 
 
 class ObjectClass(ObjectInfo):
@@ -500,7 +497,8 @@ class ObjectClass(ObjectInfo):
         kwargs['filepath'] = filepath
         return cls(**kwargs)
 
-    def get_class_content(self, dynamic_init=False, objects=None):
+    def get_class_content(
+            self, dynamic_init=False, objects=None, extra_classes=None):
         """ Renders the class template with current GladeFile info.
             Returns a string that can be written to file.
         """
@@ -525,26 +523,43 @@ class ObjectClass(ObjectInfo):
             ).lstrip()
             setobj_def = ''
 
+        extra_connect = '\n        '.join(
+            f'self.builder.connect_signals(self.{o.name})'
+            for o in (extra_classes or [])
+        )
+        if isinstance(self, ObjectApp):
+            signal_connect = '\n        '.join((
+                'self.builder.connect_signals(self)',
+                extra_connect
+            ))
+        else:
+            signal_connect = ''
+        clsname = ''.join((self.name[0].upper(), self.name[1:]))
         return template_cls.format(
-            classname=self.use_class_name or self.name.title(),
+            classname=self.use_class_name or clsname,
             filepath=self.filepath,
             widget=self.widget.replace('Gtk', ''),
             objects=object_inits,
-            set_object_def=setobj_def,
+            signal_connect=signal_connect,
             init_end=self.init_end() or '',
-            signaldefs=self.signal_defs(indent=4).rstrip(),
-        )
+            set_object_def=setobj_def,
+            signal_defs=self.signal_defs(indent=4).rstrip(),
+        ).replace('\n        \n', '\n')
 
     def init_code(self, indent=0):
         """ Return string to initialize this object.
             Example: self.winTest = WinTest()
         """
         spaces = ' ' * indent
-        n = self.name
-        return f'{spaces}self.{n} = {n.title()}()'
+        attrname = ''.join((self.name[0].lower(), self.name[1:]))
+        clsname = ''.join((self.name[0].upper(), self.name[1:]))
+        return f'{spaces}self.{attrname} = {clsname}()'
 
     def init_end(self):
         return None
+
+    def signal_connectors(self):
+        return ''
 
 
 class ObjectApp(ObjectClass):
@@ -579,13 +594,16 @@ class ObjectApp(ObjectClass):
         if not objects:
             # Use object_all() and siblings for the App class.
             objects = self.objects_all()
+            objects.append(self)
             # Sibling init code should be 'self.thing = Thing()',
             # ....not builder.get_object('thing')
             # Also, the classes need to be generated.
             objects.extend(self.siblings)
+
         return super().get_class_content(
             dynamic_init=dynamic_init,
             objects=objects,
+            extra_classes=self.get_classes(),
         )
 
     def get_classes(self):
@@ -597,8 +615,8 @@ class ObjectApp(ObjectClass):
             for o in self.get_classes()
         )
 
-    def init_code(self):
-        return ObjectInfo.init_code(self)
+    def init_code(self, indent=0):
+        return ObjectInfo.init_code(self, indent=indent)
 
     def init_end(self):
         return f'self.{self.name}.show_all()'
@@ -647,7 +665,9 @@ class Requires(object):
 class SignalHandler(object):
     """ Holds information and helper methods for a single signal handler. """
 
-    def __init__(self, name=None, handler=None, widget=None, widgettype=None):
+    def __init__(
+            self, name=None, handler=None, widget=None, widgettype=None,
+            element=None):
         # The signal name (pressed, clicked, move-cursor)
         self.name = name
         # The handler's name (mybutton_clicked_cb)
@@ -661,6 +681,7 @@ class SignalHandler(object):
             'do_',
             self.name.replace('-', '_')
         ))
+        self.element = element
 
     def __repr__(self):
         """ Return a repr() for this signal handler. """
@@ -677,6 +698,7 @@ class SignalHandler(object):
         handlername = element.get('handler', '')
         parentelem = element.getparent()
         widgettype = widgettype or parentelem.get('class', None)
+
         widgetid = parentelem.get('id', None)
         if handlername.lower().startswith('gtk'):
             debug('Ignoring GTK signal handler for: {!r}'.format(element))
@@ -687,7 +709,28 @@ class SignalHandler(object):
             handler=handlername,
             widget=widgetid or handlername.split('_')[0],
             widgettype=widgettype,
+            element=element,
         )
+
+    def full_widget(self):
+        if self.element is None:
+            return self.widget
+
+        e = self.element
+        wid = e.get('id', None)
+        ids = [wid] if wid else []
+        while True:
+            try:
+                e = e.getparent()
+                if not e:
+                    break
+            except AttributeError:
+                # End of the line.
+                break
+            wid = e.get('id', None)
+            if wid:
+                ids.append(wid)
+        return ids[-1]
 
     def get_args(self):
         """ Get known arguments for an object/widget and this signal.
@@ -732,6 +775,10 @@ class SignalHandler(object):
             return False
         return (self.name == other.name) and (self.handler == other.handler)
 
+    def key_value(self, use_id=False):
+        widgetid = f'self.{self.full_widget()}' if use_id else 'self'
+        return (f'\'{self.handler}\'', f'{widgetid}.{self.handler}')
+
     @classmethod
     def map_elements(cls, elements):
         for elem in elements:
@@ -751,12 +798,14 @@ class SignalHandler(object):
         """ Returns the function definition for this handler,
             including known arguments to this event if found.
             Arguments:
-                indent : Amount of space before the definition.
+                indent   : Amount of space before the definition.
+                with_id  : Add the widget id, to make it more unique.
         """
         template = '\n'.join((
             '{space}def {handler}({eventargs}):',
             '{space2}{docs}',
-            '{space2}{content}'))
+            '{space2}{content}'
+        ))
         doctemplate = '""" Handler for {widgetname}.{eventname}. """'
         # Use the user's widget name, the intial Gtk widgetname, or 'widget'.
         widgetname = self.widget or (self.widgettype or 'widget')

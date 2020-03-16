@@ -30,9 +30,8 @@ class {classname}(Gtk.{widget}):
         # Get gui objects
         {objects}
 
-        # Connect all signals.
-        self.builder.connect_signals(self)
-
+        {signal_connect}
         {init_end}
+
 {set_object_def}
-{signaldefs}
+{signal_defs}
