@@ -73,13 +73,13 @@ Dependencies:
 Glader has several GTK-related dependencies. If you are already creating GTK
 apps then you may have some of these installed already.
 
-###Python modules:
+### Python modules:
 
 Installed with [pip](https://pypi.python.org).
 
 * **docopt** - *Handles command-line argument parsing.*
 
-###System packages:
+### System packages:
 
 Installed with your package manager, like [apt](https://wiki.debian.org/apt-get).
 
