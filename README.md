@@ -41,7 +41,7 @@ The GUI supports Python syntax highlighting using GtkSourceView. The viewer
 uses GtkSourceView themes, and can be changed using the theme selector.
 Themes are located in `/usr/share/gtksourceview-3.0/styles`, and can be
 downloaded from various places on the internet. The most common is
-[https://wiki.gnome.org/Projects/GtkSourceView/StyleScheme](https://wiki.gnome.org/Projects/GtkSourceView/StyleScheme).
+[https://wiki.gnome.org/Projects/GtkSourceView/StyleSchemes](https://wiki.gnome.org/Projects/GtkSourceView/StyleSchemes).
 
 
 Usage:
