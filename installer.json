@@ -1,8 +1,17 @@
 {
     "paths": {
-        "files": ["^glader", "README.md"],
-        "excludes": ["~$", "\\.log$", "\\.conf$"],
+        "excludes": [
+            "~$",
+            "\\.log$",
+            "\\.conf$",
+            "^\\.",
+            "release",
+            "tests",
+            "installer\\.json",
+            "__pycache__"
+        ],
         "executables": ["glader.py"],
-        "toplevel": "glader"
+        "toplevel": "glader",
+        "recurse": true
     }
 }

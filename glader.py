@@ -46,7 +46,7 @@ USAGESTR = f"""{VERSIONSTR}
         {SCRIPT} -h | -v
         {SCRIPT} [FILE] [OUTFILE] [-D] [-d] [-g] [-l]
         {SCRIPT} FILE OUTFILE -o [-D] [-d] [-l]
-        {SCRIPT} FILE -H [-D] [-d] [-l]
+        {SCRIPT} FILE [-H | -L] [-D] [-d] [-l]
 
     Options:
         FILE            : Glade file to parse.
@@ -60,6 +60,7 @@ USAGESTR = f"""{VERSIONSTR}
         -H,--highlight  : Syntax highlight the generated code and print to
                           stdout. {highlight_warn}
         -h,--help       : Show this help message.
+        -L,--layout     : Show Glader layout for the file.
         -l,--lib        : Generate a usable Gtk.Window class only, not a
                           script.
         -o,--overwrite  : Overwrite existing files without confirmation.
@@ -76,9 +77,10 @@ def main(argd):
     if filepath and (not os.path.exists(filepath)):
         print('\nFile does not exist: {}'.format(filepath))
         return 1
-    outfile = '-' if argd['--highlight'] else argd['OUTFILE']
+    cmdline_cmds = argd['--layout'] or argd['--highlight']
+    outfile = '-' if cmdline_cmds else argd['OUTFILE']
     # Automatic command line when outputfile is given, unless --gui is used.
-    if (argd['--highlight'] or outfile) and not argd['--gui']:
+    if (cmdline_cmds or outfile) and not argd['--gui']:
         # Cmdline version.
         return do_cmdline(
             filepath,
@@ -87,6 +89,7 @@ def main(argd):
             lib_mode=argd['--lib'],
             overwrite=argd['--overwrite'],
             highlight=argd['--highlight'],
+            layout=argd['--layout'],
         )
 
     # Full gui. Function exits the program when finished.
@@ -109,7 +112,7 @@ def confirm(question):
 
 def do_cmdline(
         filepath, outputfile=None, dynamic_init=False, lib_mode=False,
-        overwrite=False, highlight=False):
+        overwrite=False, highlight=False, layout=False):
     """ Just run the cmdline version. """
     if not filepath:
         print_err('\nNo filepath provided!')
@@ -124,6 +127,10 @@ def do_cmdline(
     if not fileinfo:
         print('\nNo usable info was found for this file: {}'.format(filepath))
         return 1
+
+    if layout:
+        print(repr(fileinfo))
+        return 0
 
     content = fileinfo.get_content(lib_mode=lib_mode)
     if outputfile.startswith('-'):

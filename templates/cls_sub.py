@@ -22,7 +22,12 @@ class {classname}(Gtk.{widget}):
             gladefile = os.path.join(sys.path[0], gladefile)
 
         try:
-            self.builder.add_from_file(gladefile)
+            self.builder.add_objects_from_file(
+                gladefile,
+                [
+{objnames}
+                ]
+            )
         except Exception as ex:
             print('\\nError building main window!\\n{{}}'.format(ex))
             sys.exit(1)

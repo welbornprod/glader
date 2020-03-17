@@ -569,6 +569,23 @@ class Installer(object):
 
         for i, srcfile in enumerate(self.srcfiles):
             destfile = self.destfiles[i]
+            destdir = os.path.split(destfile)[0]
+            if not os.path.isdir(destdir):
+                if self.debug:
+                    self.report_debug(
+                        'Would\'ve created dir: {}'.format(destdir)
+                    )
+                    self.created.add(destdir)
+                else:
+                    try:
+                        os.makedirs(destdir, exist_ok=True)
+                    except OSError as ex:
+                        self.report_error(
+                            'Failed to create dir: {}\n  {}'.format(
+                                destdir,
+                                ex,
+                            )
+                        )
             if self.debug:
                 debugfmt = 'Would\'ve copied: {} -> {}'
                 self.report_debug(debugfmt.format(srcfile, destfile))

@@ -54,6 +54,8 @@ template_header = get_template('header').rstrip()
 template_body = get_template('body')
 # Class def for top level classes.
 template_cls = get_template('cls').rstrip()
+# Class def for sibling window classes.
+template_cls_sub = get_template('cls_sub').rstrip()
 # Function definition for set_object() when dynamic init is used.
 template_set_object = get_template('set_object', indent=4).rstrip()
 
@@ -147,7 +149,7 @@ class GladeFile(object):
         """ Renders the main template with current GladeFile info.
             Returns a string that can be written to file.
         """
-        class_defs = '\n\n'.join((
+        class_defs = '\n\n\n'.join((
             self.app_win.get_class_content(
                 dynamic_init=self.dynamic_init,
             ),
@@ -282,7 +284,11 @@ class ObjectInfo(object):
         'tree',
     )
     # Classes that can be promoted to ObjectClass, to generate class defs.
-    win_classes = ('GtkWindow', )
+    win_classes = [
+        f'Gtk{name}'
+        for name in dir(Gtk)
+        if name.endswith(('Window', 'Dialog', 'Assistant'))
+    ]
 
     def __init__(
             self, name=None, widget=None, objects=None, signals=None,
@@ -343,21 +349,7 @@ class ObjectInfo(object):
 
         return self
 
-    def get_class_content(self):
-        """ An ObjectInfo doesn't have "class content". """
-        return None
-
-    def get_signal(self, name, default=None):
-        """ Get signal handler by handler (signal.handler). """
-        for h in self.signals:
-            if h.handler == name:
-                return h
-        return default
-
-    def has_children(self):
-        return bool(self.objects)
-
-    def init_code(self, indent=0):
+    def init_code(self, indent=0, self_init=False):
         """ Return string to initialize this object.
             Example: self.winMain = self.builder.get_object('winMain')
         """
@@ -368,9 +360,13 @@ class ObjectInfo(object):
     def init_codes(self, indent=0, objects=None):
         """ Return a string to initialize all child objects. """
         return '\n'.join(sorted(
-            o.init_code(indent=indent)
+            o.init_code(indent=indent, self_init=(o.name == self.name))
             for o in objects or self.objects
         ))
+
+    def is_class(self, objinfo):
+        """ Returns True of `objinfo` is a sibling of this ObjectInfo. """
+        return isinstance(objinfo, ObjectClass) and (objinfo in self.siblings)
 
     def is_ignored(self):
         """ Returns True if this object should be ignored when generating
@@ -419,16 +415,19 @@ class ObjectInfo(object):
     def repr_lines(self, indent=0):
         spaces = ' ' * indent
         typename = type(self).__name__
-        selfsignals = [x for x in self.signals if x.widget == self.name]
+        reportedsignals = set()
         has_children = bool(self.signals) or bool(self.objects)
         colon = ':' if has_children else ''
         lines = [
             f'{spaces}{self.name} ({typename}: {self.widget}){colon}',
         ]
-        lines.extend((
-            f'{spaces}{x.repr_fmt(indent=indent)}'
-            for x in self.signals if (x in selfsignals)
-        ))
+        # Signals
+        for x in self.signals:
+            if x in reportedsignals:
+                continue
+            lines.append(f'{spaces}{x.repr_fmt(indent=indent)}')
+            reportedsignals.add(x)
+        # Objects
         lines.extend((
             f'{spaces}{o.repr_fmt(indent=indent)}'
             for o in self.objects
@@ -445,6 +444,7 @@ class ObjectInfo(object):
         for signal in reversed(self.signals):
             signaldef = signal.signal_def(indent=indent)
             if not signaldef.strip():
+                debug(f'No signal def for: {signal!r}')
                 continue
             signaldefs[signal.handler] = signaldef
         # Sort them.= by handler name.
@@ -484,7 +484,7 @@ class ObjectClass(ObjectInfo):
         spaces = ' ' * indent
         return '\n'.join((
             f'{spaces}\'{n}\','
-            for n in names
+            for n in sorted(names)
         ))
 
     @classmethod
@@ -502,64 +502,58 @@ class ObjectClass(ObjectInfo):
         """ Renders the class template with current GladeFile info.
             Returns a string that can be written to file.
         """
+        if not objects:
+            objects = [self]
+            objects.extend(self.objects_all())
+
         if dynamic_init:
-            template = """guinames = (
-{}
-        )
-        for objname in guinames:
-            self.set_object(objname)"""
+            template = """
+        for obj in self.builder.get_objects():
+            self.set_object(Gtk.Buildable.get_name(obj))"""
             object_inits = template.format(
                 self.format_tuple_names(
-                    (o.name for o in (objects or self.objects_all())),
+                    (o.name for o in objects),
                     indent=12
                 )
             )
+
             setobj_def = f'\n{template_set_object}\n'
         else:
             # Regular init.
             object_inits = self.init_codes(
                 indent=8,
-                objects=objects or self.objects_all(),
+                objects=objects,
             ).lstrip()
             setobj_def = ''
 
-        extra_connect = '\n        '.join(
-            f'self.builder.connect_signals(self.{o.name})'
-            for o in (extra_classes or [])
-        )
-        if isinstance(self, ObjectApp):
-            signal_connect = '\n        '.join((
-                'self.builder.connect_signals(self)',
-                extra_connect
-            ))
-        else:
-            signal_connect = ''
         clsname = ''.join((self.name[0].upper(), self.name[1:]))
-        return template_cls.format(
+        return template_cls_sub.format(
             classname=self.use_class_name or clsname,
             filepath=self.filepath,
             widget=self.widget.replace('Gtk', ''),
+            objnames=self.format_tuple_names(
+                (o.name for o in objects if not self.is_class(o)),
+                indent=20,
+            ),
             objects=object_inits,
-            signal_connect=signal_connect,
-            init_end=self.init_end() or '',
+            init_end='',
             set_object_def=setobj_def,
             signal_defs=self.signal_defs(indent=4).rstrip(),
         ).replace('\n        \n', '\n')
 
-    def init_code(self, indent=0):
+    def get_classes(self):
+        return [o for o in self.siblings if isinstance(o, ObjectClass)]
+
+    def init_code(self, indent=0, self_init=False):
         """ Return string to initialize this object.
             Example: self.winTest = WinTest()
         """
+        if self_init:
+            return ObjectInfo.init_code(self, indent=indent)
         spaces = ' ' * indent
         attrname = ''.join((self.name[0].lower(), self.name[1:]))
         clsname = ''.join((self.name[0].upper(), self.name[1:]))
         return f'{spaces}self.{attrname} = {clsname}()'
-
-    def init_end(self):
-        return None
-
-    def signal_connectors(self):
-        return ''
 
 
 class ObjectApp(ObjectClass):
@@ -593,33 +587,59 @@ class ObjectApp(ObjectClass):
     def get_class_content(self, dynamic_init=False, objects=None):
         if not objects:
             # Use object_all() and siblings for the App class.
-            objects = self.objects_all()
-            objects.append(self)
+            objects = [self]
+            objects.extend(self.objects_all())
             # Sibling init code should be 'self.thing = Thing()',
             # ....not builder.get_object('thing')
             # Also, the classes need to be generated.
             objects.extend(self.siblings)
 
-        return super().get_class_content(
-            dynamic_init=dynamic_init,
-            objects=objects,
-            extra_classes=self.get_classes(),
-        )
+        if dynamic_init:
+            template = """
+        for obj in self.builder.get_objects():
+            self.set_object(Gtk.Buildable.get_name(obj))"""
+            object_inits = '\n\n'.join((
+                template.format(
+                    self.format_tuple_names(
+                        (o.name for o in objects),
+                        indent=12
+                    )
+                ),
+                self.init_codes(indent=8, objects=self.get_classes()),
+            ))
+            setobj_def = f'\n{template_set_object}\n'
+        else:
+            # Regular init.
+            object_inits = self.init_codes(
+                indent=8,
+                objects=objects,
+            ).lstrip()
+            setobj_def = ''
 
-    def get_classes(self):
-        return [o for o in self.siblings if isinstance(o, ObjectClass)]
+        clsname = ''.join((self.name[0].upper(), self.name[1:]))
+        use_template = template_cls_sub if self.siblings else template_cls
+        return use_template.format(
+            classname=self.use_class_name or clsname,
+            filepath=self.filepath,
+            widget=self.widget.replace('Gtk', ''),
+            objnames=self.format_tuple_names(
+                (o.name for o in objects if not self.is_class(o)),
+                indent=20,
+            ),
+            objects=object_inits,
+            init_end=f'self.{self.name}.show_all()',
+            set_object_def=setobj_def,
+            signal_defs=self.signal_defs(indent=4).rstrip(),
+        ).replace('\n        \n', '\n')
 
     def get_classes_content(self, dynamic_init=False):
-        return '\n\n'.join(
+        return '\n\n\n'.join(
             o.get_class_content(dynamic_init=dynamic_init)
             for o in self.get_classes()
         )
 
-    def init_code(self, indent=0):
+    def init_code(self, indent=0, self_init=False):
         return ObjectInfo.init_code(self, indent=indent)
-
-    def init_end(self):
-        return f'self.{self.name}.show_all()'
 
     def repr_fmt(self, indent=0):
         return '\n'.join(self.repr_lines(indent=indent))
