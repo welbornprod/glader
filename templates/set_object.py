@@ -6,7 +6,6 @@ sys = None  # ignore
 
 def set_object(self, objname):
     """ Try building an object by it's name. """
-
     if objname:
         obj = self.builder.get_object(objname)
         if obj:

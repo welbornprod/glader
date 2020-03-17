@@ -35,7 +35,7 @@ def get_template(name, indent=0):
         fatal_err(f'File was deleted before it was read!: {filepath}')
     except EnvironmentError as ex:
         fatal_err(f'Unable to read template file: {filepath}\n{ex}')
-    return content.strip()
+    return content
 
 
 def parse_template(lines, indent=0):

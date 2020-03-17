@@ -11,7 +11,7 @@ from datetime import datetime
 from glader_templates import get_template
 
 NAME = 'Glader'
-__version__ = '0.2.1'
+__version__ = '0.2.2'
 VERSIONSTR = '{} v. {}'.format(NAME, __version__)
 
 # Set with -D,--debug command-line options.
@@ -49,20 +49,22 @@ settings.name = NAME
 settings.version = __version__
 
 # Template for shebang/imports.
-template_header = get_template('header')
+template_header = get_template('header').rstrip()
 # Template for the executable section.
 template_body = get_template('body')
-# Class def for main Gtk.Window.
-template_app = get_template('app')
+# Class def for top level classes.
+template_cls = get_template('cls').rstrip()
+# Class def for sibling window classes.
+template_cls_sub = get_template('cls_sub').rstrip()
 # Function definition for set_object() when dynamic init is used.
-template_set_object = get_template('set_object', indent=4)
+template_set_object = get_template('set_object', indent=4).rstrip()
 
-
-def debug(*args, **kwargs):
-    if not DEBUG:
-        return None
-    kwargs['file'] = sys.stderr
-    print(*args, **kwargs)
+# Xpath to find all <object> elements in a glade file.
+xpath_object = CSSSelector('object').path
+# Xpath to find all <requires> elements.
+xpath_requires = CSSSelector('requires').path
+# Xpath to find all <signal> elements.
+xpath_signal = CSSSelector('signal').path
 
 
 class GladeFile(object):
@@ -74,10 +76,6 @@ class GladeFile(object):
         Holds a collection of ObjectInfos with helper methods.
 
     """
-    # Xpath to find all <object> elements in a glade file.
-    xpath_object = CSSSelector('object').path
-    # Xpath to find all <requires> elements.
-    xpath_requires = CSSSelector('requires').path
 
     def __init__(self, filepath=None, dynamic_init=False):
         """ Create a GladeFile to generate code from.
@@ -101,11 +99,8 @@ class GladeFile(object):
         self.top_levels = []
         self.objects = []
         self.requires = []
-        if filepath:
-            self.tree = etree.parse(filepath)
-            self.top_levels = self.top_levels_from_tree(self.tree)
-            self.objects = self.objects_from_tree(self.tree)
-            self.requires = self.requires_from_tree(self.tree)
+        self.app_win = None
+        self.parse_file(filepath)
 
     def __bool__(self):
         """ bool(GladeFile) is based on object count.
@@ -115,7 +110,10 @@ class GladeFile(object):
 
     def __repr__(self):
         """ Return a repr() for this GladeFile for debugging purposes. """
-        return '\n'.join((repr(o) for o in self.objects))
+        return '\n'.join((
+            f'{self.filepath}:',
+            self.app_win.repr_fmt(indent=4),
+        ))
 
     def __str__(self):
         """ Return a str() for this GladeFile. """
@@ -147,57 +145,33 @@ class GladeFile(object):
             'gi_require_version() call.',
         ))
 
-    def format_tuple_names(self, indent=12):
-        """ Format object names as if they were inside a tuple definition. """
-        fmtname = '{space}\'{{name}}\','.format(space=' ' * indent)
-        return '\n'.join((fmtname.format(name=n) for n in self.names()))
-
-    def get_class_content(self):
-        """ Renders the class template with current GladeFile info.
-            Returns a string that can be written to file.
-        """
-        if self.dynamic_init:
-            template = """guinames = (
-{}
-        )
-        for objname in guinames:
-            self.set_object(objname)"""
-
-            objects = template.format(self.format_tuple_names(indent=12))
-            setobj_def = template_set_object
-        else:
-            # Regular init.
-            objects = self.init_codes(indent=8).lstrip()
-            setobj_def = ''
-        return template_app.format(
-            filepath=self.filepath,
-            mainwindow=self.get_main_window(),
-            objects=objects,
-            set_object_def=setobj_def,
-            signaldefs=self.signal_defs(indent=4),
-        )
-
     def get_content(self, lib_mode=False):
         """ Renders the main template with current GladeFile info.
             Returns a string that can be written to file.
         """
+        class_defs = '\n\n\n'.join((
+            self.app_win.get_class_content(
+                dynamic_init=self.dynamic_init,
+            ),
+            self.app_win.get_classes_content(
+                dynamic_init=self.dynamic_init,
+            ),
+        ))
         if lib_mode:
             return '\n\n'.join((
                 template_header.format(
                     requires=self.init_requires(),
                     date=datetime.today().strftime('%m-%d-%Y')
                 ),
-                self.get_class_content(),
+                class_defs,
             ))
         return '\n\n'.join((
             template_header.format(
                 requires=self.init_requires(),
                 date=datetime.today().strftime('%m-%d-%Y')
             ),
-            template_body.format(
-                class_def='\n{}\n'.format(self.get_class_content()),
-            ),
-        ))
+            template_body.format(class_def=class_defs),
+        )).replace('\n\n\n\n', '\n\n')
 
     def get_object(self, name, default=None):
         """ Retrieve an ObjectInfo by object name. """
@@ -206,39 +180,31 @@ class GladeFile(object):
                 return o
         return default
 
-    def get_main_window(self):
+    def get_app_window(self):
         """ Inspect all objects, return the name for the first one that
             looks like the main window object.
             Returns '?MainWindow?' on failure, so any generated code
             will immediately raise an exception when ran.
         """
-        windows = [o.name for o in self.objects if 'win' in o.name.lower()]
+        windows = [
+            o
+            for o in self.objects
+            if ('win' in o.name.lower()) or ('Window' in o.widget)
+        ]
         if not windows:
-            return '?MainWindow?'
-        if len(windows) == 1:
-            # Only one win object.
-            return windows[0]
-        # Search for any 'main' window.
-        for winname in windows:
-            if 'main' in winname.lower():
-                return winname
+            return ObjectApp(name='?MainWindow?')
+
+        if len(windows) > 1:
+            # Search for any 'main' window.
+            for win in windows:
+                if 'main' in win.name.lower():
+                    return ObjectApp.from_object_info(
+                        win,
+                        self.filepath,
+                    )
 
         # Can't find a 'main' window. Return the first one.
-        return windows[0]
-
-    def init_codes(self, indent=12):
-        """ Returns concatenated init code for all objects. """
-        spacing = ' ' * indent
-        joiner = '\n{}'.format(spacing).join
-        # Sorts the initialization code based on object name.
-        initcodes = []
-        for objname in self.names():
-            obj = self.get_object(objname)
-            initcodes.append(obj.init_code())
-
-        return '{}{}'.format(
-            spacing,
-            joiner(initcodes))
+        return ObjectApp.from_object_info(windows[0], self.filepath)
 
     def init_requires(self):
         """ Returns init code for all extra Requires. """
@@ -255,45 +221,44 @@ class GladeFile(object):
         """ Return a list of all object names. """
         return sorted([o.name for o in self.objects])
 
-    def objects_from_glade(self, filepath):
-        """ Returns a list of ObjectInfo parsed from a glade file.
-            Possibly raises errors from etree.parse(),
-            or ValueError when no objects are found.
-        """
-        tree = etree.parse(filepath)
-        return self.objects_from_tree(tree)
+    def parse_file(self, filepath=None):
+        self.filepath = filepath
+        self.tree = None
+        if filepath:
+            self.tree = etree.parse(filepath)
+            self.top_levels = self.objects_top_level()
+            self.objects = self.objects_all()
+            self.requires = self.objects_requires()
+            self.app_win = self.get_app_window()
 
-    def objects_from_tree(self, tree):
-        objectelems = tree.xpath(self.xpath_object)
+    def objects_all(self):
+        """ This will return ALL objects, without any hierarchy. """
+        if self.tree is None:
+            return []
+        objectelems = self.tree.xpath(xpath_object)
         if not objectelems:
             raise ValueError('No objects found.')
 
-        objects = [ObjectInfo.from_element(e) for e in objectelems]
-        # Remove separator objects.
-        return [o for o in objects if o and not o.name.startswith('<')]
+        # Remove separator/ignored objects.
+        return ObjectInfo.map_elements(objectelems)
 
-    def requires_from_tree(self, tree):
-        requireselems = tree.xpath(self.xpath_requires)
+    def objects_requires(self):
+        """ Returns all Require()s found in the tree. """
+        if self.tree is None:
+            return []
+        requireselems = self.tree.xpath(xpath_requires)
         if not requireselems:
             return []
         return [Requires.from_element(e) for e in requireselems]
 
-    def signal_defs(self, indent=4):
-        """ Returns concatenated signal definitions for all objects. """
-        # Sort the signal defs by object name.
-        signaldefs = []
-        for objname in self.names():
-            o = self.get_object(objname)
-            signaldef = o.signal_defs(indent=indent)
-            if signaldef.strip():
-                signaldefs.append(signaldef)
-        return '\n\n'.join(signaldefs)
-
-    def top_levels_from_tree(self, tree):
-        objectelems = tree.findall('object')
+    def objects_top_level(self):
+        """ Returns only top-level ObjectInfo()s. """
+        if self.tree is None:
+            return []
+        objectelems = self.tree.findall('object')
         objects = [ObjectInfo.from_element(e) for e in objectelems]
         # Remove separator objects.
-        return [o for o in objects if o and not o.name.startswith('<')]
+        return [o for o in objects if o and not o.is_ignored()]
 
     def write_file(self, filepath=None):
         """ Write parsed info to a file. """
@@ -310,29 +275,57 @@ class ObjectInfo(object):
     """ Holds information about a widget/object and it's signals, with helper
         methods.
     """
-    top_level = False
+    init_args = (
+        'name',
+        'widget',
+        'objects',
+        'signals',
+        'siblings',
+        'tree',
+    )
+    # Classes that can be promoted to ObjectClass, to generate class defs.
+    win_classes = [
+        f'Gtk{name}'
+        for name in dir(Gtk)
+        if name.endswith(('Window', 'Dialog', 'Assistant'))
+    ]
 
-    def __init__(self, name=None, widget=None, objects=None, signals=None):
+    def __init__(
+            self, name=None, widget=None, objects=None, signals=None,
+            siblings=None, tree=None):
         self.name = name
-        # Child objects.
         self.is_separator = self.name and self.name.startswith('<')
-        self.objects = objects or []
         self.widget = widget
         self.signals = signals or []
+        self.tree = None if tree is None else tree
+        # Child objects.
+        self.objects = objects or []
+        # Sibling objects.
+        self.siblings = siblings or []
+
+    def __hash__(self):
+        return hash(f'{self.widget}{self.name}{self.tree}')
 
     def __repr__(self):
         """ Return a repr() for this object and it's signal handlers. """
         return self.repr_fmt()
 
+    def __str__(self):
+        return self.name
+
     @classmethod
     def from_element(cls, element):
+        objinfo = cls()
+        return objinfo.parse_element(element)
+
+    def parse_element(self, element):
         """ Builds an ObjectInfo from an object's lxml element.
             Returns None if an id/name can't be found.
         """
         # User's name for the widget.
         objname = element.get('id', None)
         if not objname:
-            debug('Element has no id: {!r}'.format(element))
+            # Element has no id, we don't need it to generate code.
             return None
         # Widget type.
         widget = element.get('class', None)
@@ -340,65 +333,103 @@ class ObjectInfo(object):
         # Children.
         children_objs = []
         for childelem in element.findall('child'):
-            for childobjelem in childelem.findall('object'):
-                child_obj = cls.from_element(childobjelem)
-                if child_obj:
-                    children_objs.append(child_obj)
+            children_objs.extend(
+                ObjectInfo.map_elements(childelem.findall('object'))
+            )
 
         # Signal handlers.
-        signalelems = element.findall('signal')
-        if signalelems:
-            signals = []
-            for sigelem in signalelems:
-                handler = SignalHandler.from_element(
-                    sigelem,
-                    widgettype=widget)
+        signalelems = element.xpath(xpath_signal)
+        signals = list(SignalHandler.map_elements(signalelems))
 
-                if handler is not None:
-                    # from_element() returns None for 'gtk_' signals.
-                    signals.append(handler)
-        else:
-            signals = []
-        objinfo = cls(
-            name=objname,
-            widget=widget,
-            objects=children_objs,
-            signals=signals,
-        )
-        return objinfo
+        self.name = objname
+        self.widget = widget
+        self.objects = children_objs
+        self.signals = signals
+        self.tree = element
 
-    def get_signal(self, name, default=None):
-        """ Get signal handler by handler (signal.handler). """
-        for h in self.signals:
-            if h.handler == name:
-                return h
-        return default
+        return self
 
-    def init_code(self):
+    def init_code(self, indent=0, self_init=False):
         """ Return string to initialize this object.
             Example: self.winMain = self.builder.get_object('winMain')
         """
-        template = 'self.{name} = self.builder.get_object(\'{name}\')'
-        return template.format(name=self.name)
+        spaces = ' ' * indent
+        n = self.name
+        return f'{spaces}self.{n} = self.builder.get_object(\'{n}\')'
 
-    def init_codes(self):
+    def init_codes(self, indent=0, objects=None):
         """ Return a string to initialize all child objects. """
-        return '\n'.join(o.init_code() for o in self.objects)
+        return '\n'.join(sorted(
+            o.init_code(indent=indent, self_init=(o.name == self.name))
+            for o in objects or self.objects
+        ))
+
+    def is_class(self, objinfo):
+        """ Returns True of `objinfo` is a sibling of this ObjectInfo. """
+        return isinstance(objinfo, ObjectClass) and (objinfo in self.siblings)
+
+    def is_ignored(self):
+        """ Returns True if this object should be ignored when generating
+            init code, for Separators and GtkBoxes.
+        """
+        ignored_classes = ('GtkBox', )
+        return (
+            self.name.startswith('<') or
+            (self.widget in ignored_classes)
+        )
+
+    def kwargs(self):
+        return {k: getattr(self, k) for k in self.init_args}
+
+    @classmethod
+    def map_elements(cls, elements, ignore=None):
+        ignore_hashes = set(hash(o) for o in (ignore or []))
+        for elem in elements:
+            o = cls.from_element(elem)
+            if (not o) or o.is_ignored():
+                continue
+            if hash(o) in ignore_hashes:
+                continue
+            yield o
+
+    def names(self, all_objects=False):
+        """ Return a list of all object names. """
+        return sorted([
+            o.name
+            for o in (self.objects_all() if all_objects else self.objects)
+        ])
+
+    def objects_all(self):
+        """ This will return ALL objects, without any hierarchy. """
+        if self.tree is None:
+            return []
+        objectelems = self.tree.xpath(xpath_object)
+        if not objectelems:
+            return []
+
+        return list(ObjectInfo.map_elements(objectelems, ignore=(self,)))
 
     def repr_fmt(self, indent=0):
         return '\n'.join(self.repr_lines(indent=indent))
 
     def repr_lines(self, indent=0):
         spaces = ' ' * indent
+        typename = type(self).__name__
+        reportedsignals = set()
+        has_children = bool(self.signals) or bool(self.objects)
+        colon = ':' if has_children else ''
         lines = [
-            f'{spaces}{self.name} ({self.widget}):',
+            f'{spaces}{self.name} ({typename}: {self.widget}){colon}',
         ]
+        # Signals
+        for x in self.signals:
+            if x in reportedsignals:
+                continue
+            lines.append(f'{spaces}{x.repr_fmt(indent=indent)}')
+            reportedsignals.add(x)
+        # Objects
         lines.extend((
-            f'{spaces}    {x!r}'
-            for x in self.signals
-        ))
-        lines.extend((
-            f'{spaces}    {o.repr_fmt(indent=indent+4)}'
+            f'{spaces}{o.repr_fmt(indent=indent)}'
             for o in self.objects
         ))
         return lines
@@ -408,18 +439,220 @@ class ObjectInfo(object):
             or if no signal handlers are present then return ''.
             Definitions are sorted by handler name.
         """
-        # Sort the signal definitions by handler name.
-        signaldefs = []
-        for handlername in self.signal_handlers():
-            signal = self.get_signal(handlername)
+        # Signal definitions, no dupes. First one wins.
+        signaldefs = {}
+        for signal in reversed(self.signals):
             signaldef = signal.signal_def(indent=indent)
-            if signaldef.strip():
-                signaldefs.append(signaldef)
-        return '\n\n'.join(signaldefs)
+            if not signaldef.strip():
+                debug(f'No signal def for: {signal!r}')
+                continue
+            signaldefs[signal.handler] = signaldef
+        # Sort them.= by handler name.
+        return '\n\n'.join(signaldefs[k] for k in sorted(signaldefs))
 
-    def signal_handlers(self):
-        """ Return a sorted list of signal handler names. """
-        return sorted((x.handler for x in self.signals))
+
+class ObjectClass(ObjectInfo):
+    """ Holds information about an ObjectInfo that should generate a separate
+        class definition.
+    """
+    use_class_name = None
+    init_args = (
+        'filepath',
+        'name',
+        'widget',
+        'objects',
+        'signals',
+        'siblings',
+        'tree',
+    )
+
+    def __init__(
+            self, filepath=None, name=None, widget=None, objects=None,
+            signals=None, siblings=None, tree=None):
+        super().__init__(
+            name=name,
+            widget=widget,
+            objects=objects,
+            signals=signals,
+            siblings=siblings,
+            tree=tree,
+        )
+        self.filepath = filepath or None
+
+    def format_tuple_names(self, names, indent=12):
+        """ Format object names as if they were inside a tuple definition. """
+        spaces = ' ' * indent
+        return '\n'.join((
+            f'{spaces}\'{n}\','
+            for n in sorted(names)
+        ))
+
+    @classmethod
+    def from_object_info(cls, objinfo, filepath):
+        """ Promote an ObjectInfo to a ObjectApp.
+            This is simply changing the class from ObjectInfo to ObjectApp,
+            to take advantage of it's helper methods for the main window.
+        """
+        kwargs = objinfo.kwargs()
+        kwargs['filepath'] = filepath
+        return cls(**kwargs)
+
+    def get_class_content(
+            self, dynamic_init=False, objects=None, extra_classes=None):
+        """ Renders the class template with current GladeFile info.
+            Returns a string that can be written to file.
+        """
+        if not objects:
+            objects = [self]
+            objects.extend(self.objects_all())
+
+        if dynamic_init:
+            template = """
+        for obj in self.builder.get_objects():
+            self.set_object(Gtk.Buildable.get_name(obj))"""
+            object_inits = template.format(
+                self.format_tuple_names(
+                    (o.name for o in objects),
+                    indent=12
+                )
+            )
+
+            setobj_def = f'\n{template_set_object}\n'
+        else:
+            # Regular init.
+            object_inits = self.init_codes(
+                indent=8,
+                objects=objects,
+            ).lstrip()
+            setobj_def = ''
+
+        clsname = ''.join((self.name[0].upper(), self.name[1:]))
+        return template_cls_sub.format(
+            classname=self.use_class_name or clsname,
+            filepath=self.filepath,
+            widget=self.widget.replace('Gtk', ''),
+            objnames=self.format_tuple_names(
+                (o.name for o in objects if not self.is_class(o)),
+                indent=20,
+            ),
+            objects=object_inits,
+            init_end='',
+            set_object_def=setobj_def,
+            signal_defs=self.signal_defs(indent=4).rstrip(),
+        ).replace('\n        \n', '\n')
+
+    def get_classes(self):
+        return [o for o in self.siblings if isinstance(o, ObjectClass)]
+
+    def init_code(self, indent=0, self_init=False):
+        """ Return string to initialize this object.
+            Example: self.winTest = WinTest()
+        """
+        if self_init:
+            return ObjectInfo.init_code(self, indent=indent)
+        spaces = ' ' * indent
+        attrname = ''.join((self.name[0].lower(), self.name[1:]))
+        clsname = ''.join((self.name[0].upper(), self.name[1:]))
+        return f'{spaces}self.{attrname} = {clsname}()'
+
+
+class ObjectApp(ObjectClass):
+    """ Holds information about the main App class, which in turn contains
+        possible children with separate classes.
+    """
+    use_class_name = 'App'
+
+    @classmethod
+    def from_object_info(cls, objinfo, filepath):
+        kwargs = objinfo.kwargs()
+        kwargs['filepath'] = filepath
+        app = cls(**kwargs)
+        # Get siblings.
+
+        # Siblings
+        sibling_elems = [
+            e
+            for e in objinfo.tree.getparent().findall('object')
+            if e.get('id', None) != app.name
+        ]
+        app.siblings = list(ObjectInfo.map_elements(sibling_elems))
+        # Promote siblings to ObjectClass where needed.
+        for i, sibling in enumerate(app.siblings[:]):
+            if sibling.widget in cls.win_classes:
+                siblingargs = sibling.kwargs()
+                siblingargs['filepath'] = filepath
+                app.siblings[i] = ObjectClass(**siblingargs)
+        return app
+
+    def get_class_content(self, dynamic_init=False, objects=None):
+        if not objects:
+            # Use object_all() and siblings for the App class.
+            objects = [self]
+            objects.extend(self.objects_all())
+            # Sibling init code should be 'self.thing = Thing()',
+            # ....not builder.get_object('thing')
+            # Also, the classes need to be generated.
+            objects.extend(self.siblings)
+
+        if dynamic_init:
+            template = """
+        for obj in self.builder.get_objects():
+            self.set_object(Gtk.Buildable.get_name(obj))"""
+            object_inits = '\n\n'.join((
+                template.format(
+                    self.format_tuple_names(
+                        (o.name for o in objects),
+                        indent=12
+                    )
+                ),
+                self.init_codes(indent=8, objects=self.get_classes()),
+            ))
+            setobj_def = f'\n{template_set_object}\n'
+        else:
+            # Regular init.
+            object_inits = self.init_codes(
+                indent=8,
+                objects=objects,
+            ).lstrip()
+            setobj_def = ''
+
+        clsname = ''.join((self.name[0].upper(), self.name[1:]))
+        use_template = template_cls_sub if self.siblings else template_cls
+        return use_template.format(
+            classname=self.use_class_name or clsname,
+            filepath=self.filepath,
+            widget=self.widget.replace('Gtk', ''),
+            objnames=self.format_tuple_names(
+                (o.name for o in objects if not self.is_class(o)),
+                indent=20,
+            ),
+            objects=object_inits,
+            init_end=f'self.{self.name}.show_all()',
+            set_object_def=setobj_def,
+            signal_defs=self.signal_defs(indent=4).rstrip(),
+        ).replace('\n        \n', '\n')
+
+    def get_classes_content(self, dynamic_init=False):
+        return '\n\n\n'.join(
+            o.get_class_content(dynamic_init=dynamic_init)
+            for o in self.get_classes()
+        )
+
+    def init_code(self, indent=0, self_init=False):
+        return ObjectInfo.init_code(self, indent=indent)
+
+    def repr_fmt(self, indent=0):
+        return '\n'.join(self.repr_lines(indent=indent))
+
+    def repr_lines(self, indent=0):
+        spaces = ' ' * indent
+        lines = super().repr_lines(indent=indent)
+        lines.extend(o.repr_fmt(indent) for o in self.objects_all())
+        siblings = [o.repr_fmt(indent) for o in self.get_classes()]
+        if siblings:
+            lines.append(f'{spaces}Siblings:')
+            lines.extend(siblings)
+        return lines
 
 
 class Requires(object):
@@ -452,7 +685,9 @@ class Requires(object):
 class SignalHandler(object):
     """ Holds information and helper methods for a single signal handler. """
 
-    def __init__(self, name=None, handler=None, widget=None, widgettype=None):
+    def __init__(
+            self, name=None, handler=None, widget=None, widgettype=None,
+            element=None):
         # The signal name (pressed, clicked, move-cursor)
         self.name = name
         # The handler's name (mybutton_clicked_cb)
@@ -461,10 +696,16 @@ class SignalHandler(object):
         self.widget = widget
         # This is a Gtk widget type (GtkButton, or just Button)
         self.widgettype = widgettype
+        # This is the event name for Gtk events.
+        self.event = ''.join((
+            'do_',
+            self.name.replace('-', '_')
+        ))
+        self.element = element
 
     def __repr__(self):
         """ Return a repr() for this signal handler. """
-        return '{}.{}'.format(self.widget, self.handler)
+        return self.repr_fmt()
 
     @classmethod
     def from_element(cls, element, widgettype=None):
@@ -475,15 +716,41 @@ class SignalHandler(object):
         """
         eventname = element.get('name', None)
         handlername = element.get('handler', '')
+        parentelem = element.getparent()
+        widgettype = widgettype or parentelem.get('class', None)
+
+        widgetid = parentelem.get('id', None)
         if handlername.lower().startswith('gtk'):
             debug('Ignoring GTK signal handler for: {!r}'.format(element))
             return None
-        widgetname = handlername.split('_')[0]
+
         return cls(
             name=eventname,
             handler=handlername,
-            widget=widgetname,
-            widgettype=widgettype)
+            widget=widgetid or handlername.split('_')[0],
+            widgettype=widgettype,
+            element=element,
+        )
+
+    def full_widget(self):
+        if self.element is None:
+            return self.widget
+
+        e = self.element
+        wid = e.get('id', None)
+        ids = [wid] if wid else []
+        while True:
+            try:
+                e = e.getparent()
+                if not e:
+                    break
+            except AttributeError:
+                # End of the line.
+                break
+            wid = e.get('id', None)
+            if wid:
+                ids.append(wid)
+        return ids[-1]
 
     def get_args(self):
         """ Get known arguments for an object/widget and this signal.
@@ -501,11 +768,13 @@ class SignalHandler(object):
 
         # Find the widget class in Gtk.
         widget = getattr(Gtk, gtkname, None)
-
+        if widget is None:
+            debug(f'No widget named: {gtkname}')
         # Find the event handler function info for the widget.
         # 'move-cursor' becomes Gtk.WidgetThing.do_move_cursor
-        eventfunc = 'do_{}'.format(self.name.replace('-', '_'))
-        widgetevent = getattr(widget, eventfunc, None)
+        widgetevent = getattr(widget, self.event, None)
+        if widget and (widgetevent is None):
+            debug(f'No event function found for: {gtkname}:{self.name}')
         # Get argument info.
         if hasattr(widgetevent, 'get_arguments'):
             # Return default and known args.
@@ -517,18 +786,46 @@ class SignalHandler(object):
             return tuple(formattedargs)
 
         # No argument info for this widget/event.
+        if widget and widgetevent:
+            debug(f'Unable to get_arguments() for: {gtkname}:{widgetevent}')
         return defaultargs
+
+    def is_dupe(self, other):
+        if not isinstance(other, SignalHandler):
+            return False
+        return (self.name == other.name) and (self.handler == other.handler)
+
+    def key_value(self, use_id=False):
+        widgetid = f'self.{self.full_widget()}' if use_id else 'self'
+        return (f'\'{self.handler}\'', f'{widgetid}.{self.handler}')
+
+    @classmethod
+    def map_elements(cls, elements):
+        for elem in elements:
+            h = cls.from_element(elem)
+            if h is not None:
+                yield h
+
+    def repr_fmt(self, indent=0):
+        return '\n'.join(self.repr_lines(indent=indent))
+
+    def repr_lines(self, indent=0):
+        spaces = ' ' * indent
+        t = type(self).__name__
+        return [f'{spaces}{self.widget}.{self.name} ({t}: {self.widgettype})']
 
     def signal_def(self, indent=4):
         """ Returns the function definition for this handler,
             including known arguments to this event if found.
             Arguments:
-                indent : Amount of space before the definition.
+                indent   : Amount of space before the definition.
+                with_id  : Add the widget id, to make it more unique.
         """
         template = '\n'.join((
             '{space}def {handler}({eventargs}):',
             '{space2}{docs}',
-            '{space2}{content}'))
+            '{space2}{content}'
+        ))
         doctemplate = '""" Handler for {widgetname}.{eventname}. """'
         # Use the user's widget name, the intial Gtk widgetname, or 'widget'.
         widgetname = self.widget or (self.widgettype or 'widget')
@@ -552,3 +849,10 @@ class SignalHandler(object):
             docs=docs,
             eventargs=eventargs,
             content=content)
+
+
+def debug(*args, **kwargs):
+    if not DEBUG:
+        return None
+    kwargs['file'] = sys.stderr
+    print(*args, **kwargs)

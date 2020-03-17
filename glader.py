@@ -17,29 +17,56 @@ try:
 except ImportError as eximp:
     import_fail(eximp)
 
+try:
+    from pygments import highlight as pyg_highlight
+    from pygments.lexers import get_lexer_by_name
+    from pygments.formatters import Terminal256Formatter
+except ImportError:
+    highlight_warn = 'You must `pip install pygments`.'
+    has_pygments = False
+
+    def highlight_code(code):
+        return code
+else:
+    # For the --highlight option, when pygments is available.
+    pyg_lexer = get_lexer_by_name('python3')
+    pyg_formatter = Terminal256Formatter(bg='dark', style='monokai')
+    highlight_warn = ''
+    has_pygments = True
+
+    def highlight_code(code):
+        return pyg_highlight(code, pyg_lexer, pyg_formatter).rstrip()
+
+
 SCRIPT = os.path.split(os.path.abspath(sys.argv[0]))[1]
 SCRIPTDIR = os.path.abspath(sys.path[0])
 
-USAGESTR = """{versionstr}
+USAGESTR = f"""{VERSIONSTR}
     Usage:
-        {script} -h | -v
-        {script} [FILE] [OUTFILE] [-D] [-d] [-g] [-l]
+        {SCRIPT} -h | -v
+        {SCRIPT} [FILE] [OUTFILE] [-D] [-d] [-g] [-l]
+        {SCRIPT} FILE OUTFILE -o [-D] [-d] [-l]
+        {SCRIPT} FILE [-H | -L] [-D] [-d] [-l]
 
     Options:
-        FILE           : Glade file to parse.
-        OUTFILE        : File name for output.
-                         If - is given, output will be printed to stdout.
-        -D,--debug     : Show more info on errors.
-        -d,--dynamic   : Use dynamic object initialization method.
-        -g,--gui       : Force use of a GUI, even when an output file is given.
-                         You still have to use the 'Save' button to apply
-                         changes.
-        -h,--help      : Show this help message.
-        -l,--lib       : Generate a usable Gtk.Window class only, not a
-                         script.
-        -v,--version   : Show version.
+        FILE            : Glade file to parse.
+        OUTFILE         : File name for output.
+                          If - is given, output will be printed to stdout.
+        -D,--debug      : Show more info on errors.
+        -d,--dynamic    : Use dynamic object initialization method.
+        -g,--gui        : Force use of a GUI, even when an output file is given.
+                          You still have to use the 'Save' button to apply
+                          changes.
+        -H,--highlight  : Syntax highlight the generated code and print to
+                          stdout. {highlight_warn}
+        -h,--help       : Show this help message.
+        -L,--layout     : Show Glader layout for the file.
+        -l,--lib        : Generate a usable Gtk.Window class only, not a
+                          script.
+        -o,--overwrite  : Overwrite existing files without confirmation.
+        -v,--version    : Show version.
 
-""".format(script=SCRIPT, versionstr=VERSIONSTR)
+"""
 
 DEBUG = ('-D' in sys.argv) or ('--debug' in sys.argv)
 
@@ -50,16 +77,19 @@ def main(argd):
     if filepath and (not os.path.exists(filepath)):
         print('\nFile does not exist: {}'.format(filepath))
         return 1
-
-    outfile = argd['OUTFILE']
+    cmdline_cmds = argd['--layout'] or argd['--highlight']
+    outfile = '-' if cmdline_cmds else argd['OUTFILE']
     # Automatic command line when outputfile is given, unless --gui is used.
-    if outfile and not argd['--gui']:
+    if (cmdline_cmds or outfile) and not argd['--gui']:
         # Cmdline version.
         return do_cmdline(
             filepath,
             outputfile=outfile,
             dynamic_init=argd['--dynamic'],
             lib_mode=argd['--lib'],
+            overwrite=argd['--overwrite'],
+            highlight=argd['--highlight'],
+            layout=argd['--layout'],
         )
 
     # Full gui. Function exits the program when finished.
@@ -80,9 +110,14 @@ def confirm(question):
     return ans.startswith('y')
 
 
-def do_cmdline(filepath, outputfile=None, dynamic_init=False, lib_mode=False):
+def do_cmdline(
+        filepath, outputfile=None, dynamic_init=False, lib_mode=False,
+        overwrite=False, highlight=False, layout=False):
     """ Just run the cmdline version. """
-    if outputfile and os.path.exists(outputfile):
+    if not filepath:
+        print_err('\nNo filepath provided!')
+        return 1
+    if outputfile and os.path.exists(outputfile) and (not overwrite):
         msg = '\nFile exists: {}\n\nOverwrite it?'.format(outputfile)
         if not confirm(msg):
             print('\nUser cancelled.\n')
@@ -93,10 +128,14 @@ def do_cmdline(filepath, outputfile=None, dynamic_init=False, lib_mode=False):
         print('\nNo usable info was found for this file: {}'.format(filepath))
         return 1
 
+    if layout:
+        print(repr(fileinfo))
+        return 0
+
     content = fileinfo.get_content(lib_mode=lib_mode)
     if outputfile.startswith('-'):
         # User wants stdout.
-        print(content)
+        print(highlight_code(content) if highlight else content)
     else:
         try:
             with open(outputfile, 'w')as f:

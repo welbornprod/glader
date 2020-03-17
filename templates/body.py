@@ -9,6 +9,7 @@ NAME = 'GtkApp'
 __version__ = '0.0.1'
 VERSIONSTR = '{{}} v. {{}}'.format(NAME, __version__)
 
+
 {class_def}
 
 
