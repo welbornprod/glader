@@ -11,7 +11,7 @@ from datetime import datetime
 from glader_templates import get_template
 
 NAME = 'Glader'
-__version__ = '0.2.2'
+__version__ = '0.2.3'
 VERSIONSTR = '{} v. {}'.format(NAME, __version__)
 
 # Set with -D,--debug command-line options.

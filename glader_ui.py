@@ -10,7 +10,8 @@ from glader_util import (
     import_fail,
     settings,
     GladeFile,
-    NAME
+    NAME,
+    VERSIONSTR,
 )
 
 try:
@@ -120,6 +121,7 @@ class App(Gtk.Window):
         self.srcviewOutput.modify_font(Pango.FontDescription('monospace'))
         # This window.
         self.winMain = self.builder.get_object('winMain')
+        self.winMain.set_title(VERSIONSTR)
 
         # Initialize a MessageBoxes class to work with.
         self.msgs = MessageBoxes(parent=self.winMain, title=NAME)
