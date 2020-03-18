@@ -13,5 +13,6 @@
         "executables": ["glader.py"],
         "toplevel": "glader",
         "recurse": true
-    }
+    },
+    "commands": ["bash install_deps.sh"]
 }

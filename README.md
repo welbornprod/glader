@@ -87,8 +87,25 @@ Installed with your package manager, like [apt](https://wiki.debian.org/apt-get)
 * **libgtksourceview-3.0-dev** - *Provides the `GtkSourceView` widget.*
 * **python3-gi** - *Provides python bindings for gobject-introspection.*
 
-There may be others, I will fill in the missing dependencies as they are found.
-Message me or file an issue if you run into errors.
+
+Install:
+--------
+
+An installer script is included in the repo. It will attempt to install any
+*missing* dependencies. The full installation process is this:
+```bash
+# Clone the repo:
+git clone https://github.com/welbornprod/glader.git
+
+# Change to the project directory:
+cd glader
+
+# Run the installer (--user is recommended).
+./install --user
+```
+
+If there are no errors, then you're good to go. A `glader` command was just
+installed.
 
 
 Compatibility:
@@ -114,4 +131,4 @@ feature added to Glader.
 GUI Preview:
 --------
 
-![Glader](http://welbornprod.com/static/images/glader/glader-preview.png)
+![Glader](https://welbornprod.com/images/glader-preview.png)

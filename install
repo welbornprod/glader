@@ -18,10 +18,11 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 
 NAME = 'Python Installer'
-VERSION = '0.0.5'
+VERSION = '0.0.6'
 VERSIONSTR = '{} v. {}'.format(NAME, VERSION)
 SCRIPT = os.path.split(os.path.abspath(sys.argv[0]))[1]
 SCRIPTDIR = os.path.abspath(sys.path[0])
@@ -31,7 +32,7 @@ USAGESTR = """{versionstr}
     Usage:
         {script} -h | -v
         {script} [-u] [-D]
-        {script} (uninstall | remove) [-D]
+        {script} (uninstall | remove | commands) [-D]
 
     Options:
         -D,--debug    : Don't write or create anything.
@@ -40,6 +41,7 @@ USAGESTR = """{versionstr}
         -v,--version  : Show version.
 
     The default action is to install the application.
+    The 'commands' command will just run any pre-install commands.
 """.format(script=SCRIPT, versionstr=VERSIONSTR)
 
 
@@ -64,6 +66,9 @@ def main(argd):
         else:
             print('\nUnable to uninstall, sorry.')
             return 1
+    elif argd['commands']:
+        # Just run the pre-install commands.
+        return installer.run_commands()
 
     # Do an installation.
     if installer.install_files():
@@ -719,6 +724,8 @@ class Installer(object):
         self.destfiles = self.get_dest_files()
         # Executable files from the install dir.
         self.exes = self.get_executable_files()
+        # Pre-install commands.
+        self.cmd_errors = self.run_commands()
 
     def read_installed_files(self):
         """ Read previously installed files into a list. """
@@ -786,6 +793,26 @@ class Installer(object):
         """ Use the error reporter to report a fatal error if available. """
         self.clean_up(reason=msg)
         self.error_reporter(msg)
+
+    def run_commands(self):
+        errs = 0
+        commands = self.config.get('commands', [])
+        if not commands:
+            self.report_debug('No commands to run.')
+            return 0
+
+        for cmd in commands:
+            if isinstance(cmd, list):
+                cmdstr = ' '.join(cmd)
+                self.report_debug(f'Running subprocess: {cmdstr}')
+                try:
+                    subprocess.check_call(cmd)
+                except subprocess.CalledProcessError:
+                    errs += 1
+            else:
+                self.report_debug(f'Running system command: {cmd}')
+                errs += os.system(cmd)
+        return errs
 
     def set_error_reporter(self, reporter):
         """ Set the error reporter, or build an exception raiser if none is
