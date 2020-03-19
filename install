@@ -32,7 +32,7 @@ USAGESTR = """{versionstr}
     Usage:
         {script} -h | -v
         {script} [-u] [-D]
-        {script} (uninstall | remove | commands) [-D]
+        {script} (uninstall | remove | preinstall) [-D]
 
     Options:
         -D,--debug    : Don't write or create anything.
@@ -41,7 +41,7 @@ USAGESTR = """{versionstr}
         -v,--version  : Show version.
 
     The default action is to install the application.
-    The 'commands' command will just run any pre-install commands.
+    The 'preinstall' command will just run any pre-install commands.
 """.format(script=SCRIPT, versionstr=VERSIONSTR)
 
 
@@ -66,7 +66,7 @@ def main(argd):
         else:
             print('\nUnable to uninstall, sorry.')
             return 1
-    elif argd['commands']:
+    elif argd['preinstall']:
         # Just run the pre-install commands.
         return installer.run_commands()
 
@@ -124,7 +124,9 @@ class Installer(object):
         'dependencies': {},
         # Default is user-specified from init (use_global = True/False).
         # 'global' or 'local' can be used to force a preference.
-        'install_type': None
+        'install_type': None,
+        # Extra commands to run before install.
+        'commands': [],
     }
 
     # Global directories for installing applications.
