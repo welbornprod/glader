@@ -139,7 +139,7 @@ class GladeFile(object):
         return '\n'.join((
             'This file depends on extra libraries:',
             '\n'.join(f'    {r.init_code()}' for r in reqs),
-            '\nYou may need to register them with:',
+            '\nYou may need to register some types to use them:',
             '    GObject.type_register(<widget class>)',
             '\nYou may also need to use a different name in the',
             'gi_require_version() call.',
