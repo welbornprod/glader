@@ -121,7 +121,6 @@ class App(Gtk.Window):
         self.srcviewOutput.modify_font(Pango.FontDescription('monospace'))
         # This window.
         self.winMain = self.builder.get_object('winMain')
-        self.winMain.set_title(VERSIONSTR)
 
         # Initialize a MessageBoxes class to work with.
         self.msgs = MessageBoxes(parent=self.winMain, title=NAME)
@@ -134,6 +133,8 @@ class App(Gtk.Window):
         # Connect all signals.
         self.builder.connect_signals(self)
 
+        # Title fix.
+        self.winMain.set_title(VERSIONSTR)
         # Show the main window.
         self.winMain.show_all()
 
