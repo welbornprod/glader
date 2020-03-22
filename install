@@ -31,8 +31,8 @@ CWD = os.getcwd()
 USAGESTR = """{versionstr}
     Usage:
         {script} -h | -v
-        {script} [-u] [-D]
-        {script} (uninstall | remove | preinstall) [-D]
+        {script} [preinstall] [-u] [-D]
+        {script} (uninstall | remove) [-D]
 
     Options:
         -D,--debug    : Don't write or create anything.
@@ -320,6 +320,14 @@ class Installer(object):
                 self.report_error(errfmt.format(installdir, ex))
         # Exists, or created it, success.
         return installdir
+
+    def fix_user_arg(self, s):
+        """ Replace '{user_args}' with user arguments if needed. """
+        if self.use_global:
+            repl = ''
+        else:
+            repl = '--user'
+        return s.format(user_args=repl)
 
     def get_base_dir(self):
         """ Determine the base installation directory based on config. """
@@ -805,6 +813,7 @@ class Installer(object):
 
         for cmd in commands:
             if isinstance(cmd, list):
+                cmd = [self.fix_user_arg(s) for s in cmd]
                 cmdstr = ' '.join(cmd)
                 self.report_debug(f'Running subprocess: {cmdstr}')
                 try:
@@ -812,6 +821,7 @@ class Installer(object):
                 except subprocess.CalledProcessError:
                     errs += 1
             else:
+                cmd = self.fix_user_arg(cmd)
                 self.report_debug(f'Running system command: {cmd}')
                 errs += os.system(cmd)
         return errs

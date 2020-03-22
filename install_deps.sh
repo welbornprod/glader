@@ -121,7 +121,11 @@ function install_apt {
 }
 
 function install_pip {
-    "$python3_exe" -m pip install --user "$@"
+    if ((do_user)); then
+        "$python3_exe" -m pip install --user "$@"
+    else
+        sudo "$python3_exe" -m pip install "$@"
+    fi
 }
 
 function is_apt_installed {
@@ -151,12 +155,16 @@ function print_usage {
 }
 
 declare -a nonflags
+do_user=0
 
 for arg; do
     case "$arg" in
         "-h" | "--help")
             print_usage ""
             exit 0
+            ;;
+        "-u" | "--user")
+            do_user=1
             ;;
         "-v" | "--version")
             echo -e "$appname v. $appversion\n"

@@ -14,5 +14,5 @@
         "toplevel": "glader",
         "recurse": true
     },
-    "commands": ["bash install_deps.sh"]
+    "commands": ["bash install_deps.sh {user_args}"]
 }
