@@ -12,17 +12,18 @@
 
     -Christopher Welborn 09-16-2014
 """
-from __future__ import print_function
-from docopt import docopt
 import json
 import os
 import re
 import shutil
 import subprocess
 import sys
+from collections import UserList
+
+from docopt import docopt
 
 NAME = 'Python Installer'
-VERSION = '0.0.6'
+VERSION = '0.0.7'
 VERSIONSTR = '{} v. {}'.format(NAME, VERSION)
 SCRIPT = os.path.split(os.path.abspath(sys.argv[0]))[1]
 SCRIPTDIR = os.path.abspath(sys.path[0])
@@ -86,6 +87,110 @@ def fail(reason):
     sys.exit(1)
 
 
+def try_reporter(reporter):
+    """ If reporter is a callable, return it. Otherwise return a callable
+        that does nothing.
+    """
+    return reporter if (reporter and callable(reporter)) else (lambda x: None)
+
+
+class Command(UserList):
+    """ A command argument list, with helper methods to run the command.
+    """
+    def __init__(self, args=None, name=None, debug_reporter=None):
+        super().__init__(args or [])
+        self.name = name or (self[0] if self else None)
+        self.report_debug = try_reporter(debug_reporter)
+
+    def __bool__(self):
+        return bool(self.data)
+
+    def __repr__(self):
+        typename = type(self).__name__
+        return f'{typename}({self.data!r}, name={self.name!r})'
+
+    def __str__(self):
+        if self.name:
+            return f'{self.name}: {" ".join(self) or "<no command>"}'
+        return ' '.join(self) or '<no command>'
+
+    @classmethod
+    def from_dict(cls, d, use_global=False, debug_reporter=None):
+        report_debug = try_reporter(debug_reporter)
+        name = d.get('name', d.get('command', [''])[0])
+        if use_global:
+            cmd = d['command']
+            report_debug(f'Using global command: {cmd}')
+        else:
+            # Use user command if available.
+            cmd = d.get('command_user', d['command'])
+            report_debug(f'Using user command: {cmd}')
+        return cls(cmd, name=name, debug_reporter=debug_reporter)
+
+    @classmethod
+    def from_list(cls, args, debug_reporter=None):
+        try_reporter(debug_reporter)(f'Using global list: {args!r}')
+        return cls(args, debug_reporter=debug_reporter)
+
+    @classmethod
+    def from_str(cls, s, debug_reporter=None):
+        try_reporter(debug_reporter)(f'Using global str: {s!r}')
+        return cls(s.split(' '), debug_reporter=debug_reporter)
+
+    def run(self):
+        try:
+            subprocess.check_call(self)
+        except subprocess.CalledProcessError:
+            return 1
+        return 0
+
+
+class Commands(UserList):
+    """ A list of Command objects, with helper methods to run/inspect them.
+    """
+    def __init__(self, commands=None, use_global=False, debug_reporter=None):
+        super().__init__(commands or [])
+        self.report_debug = try_reporter(debug_reporter)
+        self.use_global = use_global
+        self._parse_commands()
+        self.errors = 0
+
+    def _parse_commands(self):
+        """ Ensure all command items are Command instances.
+            Convert them if needed.
+        """
+        for i, x in enumerate(self[:]):
+            if isinstance(x, Command):
+                continue
+            if isinstance(x, list):
+                # An argument list.
+                self[i] = Command.from_list(
+                    x,
+                    debug_reporter=self.report_debug,
+                )
+            elif isinstance(x, dict):
+                # A command info dict:
+                #   {'name': 'x', command': [..], 'command_user': [..]}}
+                self[i] = Command.from_dict(
+                    x,
+                    use_global=self.use_global,
+                    debug_reporter=self.report_debug,
+                )
+            elif isinstance(x, str):
+                # A command string.
+                self[i] = Command.from_str(
+                    x,
+                    debug_reporter=self.report_debug,
+                )
+
+    def run(self):
+        self.errors = 0
+        for cmd in self:
+            self.report_debug(f'Running: {cmd}')
+            self.errors += cmd.run()
+        return self.errors
+
+
 class Installer(object):
 
     """ Reads installer config, or uses default settings to search the current
@@ -126,7 +231,7 @@ class Installer(object):
         # 'global' or 'local' can be used to force a preference.
         'install_type': None,
         # Extra commands to run before install.
-        'commands': [],
+        'commands': Commands(),
     }
 
     # Global directories for installing applications.
@@ -805,26 +910,15 @@ class Installer(object):
         self.error_reporter(msg)
 
     def run_commands(self):
-        errs = 0
-        commands = self.config.get('commands', [])
+        commands = Commands(
+            self.config.get('commands', []),
+            use_global=self.use_global,
+            debug_reporter=self.report_debug,
+        )
         if not commands:
             self.report_debug('No commands to run.')
             return 0
-
-        for cmd in commands:
-            if isinstance(cmd, list):
-                cmd = [self.fix_user_arg(s) for s in cmd]
-                cmdstr = ' '.join(cmd)
-                self.report_debug(f'Running subprocess: {cmdstr}')
-                try:
-                    subprocess.check_call(cmd)
-                except subprocess.CalledProcessError:
-                    errs += 1
-            else:
-                cmd = self.fix_user_arg(cmd)
-                self.report_debug(f'Running system command: {cmd}')
-                errs += os.system(cmd)
-        return errs
+        return commands.run()
 
     def set_error_reporter(self, reporter):
         """ Set the error reporter, or build an exception raiser if none is

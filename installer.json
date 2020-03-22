@@ -14,5 +14,11 @@
         "toplevel": "glader",
         "recurse": true
     },
-    "commands": ["bash install_deps.sh {user_args}"]
+    "commands": [
+        {
+            "name": "install_deps",
+            "command": ["bash", "install_deps.sh"],
+            "command_user": ["bash", "install_deps.sh", "--user"]
+        }
+    ]
 }
