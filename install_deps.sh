@@ -117,11 +117,11 @@ function get_python3 {
 }
 
 function install_apt {
-    "$apt_exe" install "$@"
+    sudo "$apt_exe" install "$@"
 }
 
 function install_pip {
-    "$python3_exe" -m pip install "$@"
+    "$python3_exe" -m pip install --user "$@"
 }
 
 function is_apt_installed {
