@@ -47,11 +47,11 @@ class App(Gtk.Window):
         # A GladeFile() instance set by generate_code().
         self.glade = None
 
-        # Requirement warnings issued already in generate_code().
-        # If a file needs a requirement warning, the warning will be issued
-        # and it's filepath/requirements saved so that the warning is only
-        # issued once per file (with the same requirements).
-        self.require_warned = {}
+        # Warnings issued already in generate_code().
+        # If a file needs a warning, the warning will be issued
+        # and it's filepath/warnings saved so that the warning is only
+        # issued once per file (with the same message).
+        self.warned_files = {}
 
         # Get gui objects
         self.btnFileOpen = self.builder.get_object('btnFileOpen')
@@ -145,9 +145,9 @@ class App(Gtk.Window):
         filepath = widget.get_filename()
         if filepath:
             # Automatically generate code for selected files.
-            if self.require_warned.get(filepath, None):
+            if self.warned_files.get(filepath, None):
                 # Manually re-opening the file resets the requirement warnings.
-                self.require_warned[filepath] = None
+                self.warned_files[filepath] = None
             self.generate_code()
 
     def btnGenerate_activate_cb(self, widget, user_data=None):
@@ -242,10 +242,10 @@ class App(Gtk.Window):
         content = gladefile.get_content(lib_mode=lib_mode)
         self.bufferOutput.set_text(content)
         self.glade = gladefile
-        reqs = gladefile.extra_requires_msg()
-        if reqs and (self.require_warned.get(filepath, None) != reqs):
-            self.require_warned[filepath] = reqs
-            self.msgs.warn(reqs)
+        warnings = gladefile.warning_msgs()
+        if warnings and (self.warned_files.get(filepath, None) != warnings):
+            self.warned_files[filepath] = warnings
+            self.msgs.warn(warnings)
 
     def get_theme_by_name(self, name):
         """ Retrieves a StyleScheme from self.themes by it's proper name.

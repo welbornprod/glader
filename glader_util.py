@@ -61,6 +61,7 @@ class GladeFile(object):
         Holds a collection of ObjectInfos with helper methods.
 
     """
+    no_main_marker = '?MainWindow?'
 
     def __init__(self, filepath=None, dynamic_init=False):
         """ Create a GladeFile to generate code from.
@@ -114,22 +115,6 @@ class GladeFile(object):
         """ Returns any extra Requires (not Gtk, and not empty). """
         return [r for r in self.requires if r.lib and (r.lib != 'gtk+')]
 
-    def extra_requires_msg(self):
-        """ Returns a warning message about extra Requires if any are found,
-            otherwise returns an empty string.
-        """
-        reqs = self.extra_requires()
-        if not reqs:
-            return ''
-        return '\n'.join((
-            'This file depends on extra libraries:',
-            '\n'.join(f'    {r.init_code()}' for r in reqs),
-            '\nYou may need to register some types to use them:',
-            '    GObject.type_register(<widget class>)',
-            '\nYou may also need to use a different name in the',
-            'gi_require_version() call.',
-        ))
-
     def get_content(self, lib_mode=False):
         """ Renders the main template with current GladeFile info.
             Returns a string that can be written to file.
@@ -177,7 +162,7 @@ class GladeFile(object):
             if ('win' in o.name.lower()) or ('Window' in o.widget)
         ]
         if not windows:
-            return ObjectApp(name='?MainWindow?')
+            return ObjectApp(name=self.no_main_marker)
 
         if len(windows) > 1:
             # Search for any 'main' window.
@@ -201,6 +186,30 @@ class GladeFile(object):
         # chmod 774
         mode774 = stat.S_IRWXU | stat.S_IRWXG | stat.S_IROTH
         os.chmod(filepath, mode774)
+
+    def msg_extra_requires(self):
+        """ Returns a warning message about extra Requires if any are found,
+            otherwise returns an empty string.
+        """
+        reqs = self.extra_requires()
+        if not reqs:
+            return ''
+        return '\n'.join((
+            'This file depends on extra libraries:',
+            '\n'.join(f'    {r.init_code()}' for r in reqs),
+            '\nYou may need to register some types to use them:',
+            '    GObject.type_register(<widget class>)',
+            '\nYou may also need to use a different name in the',
+            'gi_require_version() call.',
+        ))
+
+    def msg_no_app_win(self):
+        if getattr(self.app_win, 'name', '') != self.no_main_marker:
+            return ''
+        return '\n'.join((
+            'No main window was found in this glade file.',
+            'Glader will not work without at least one top-level window.',
+        ))
 
     def names(self):
         """ Return a list of all object names. """
@@ -244,6 +253,11 @@ class GladeFile(object):
         objects = [ObjectInfo.from_element(e) for e in objectelems]
         # Remove separator objects.
         return [o for o in objects if o and not o.is_ignored()]
+
+    def warning_msgs(self):
+        """ Return warning message strings, or '' if there are none. """
+        msgs = [self.msg_extra_requires(), self.msg_no_app_win()]
+        return '\n\n'.join(s for s in msgs if s)
 
     def write_file(self, filepath=None):
         """ Write parsed info to a file. """
@@ -515,7 +529,7 @@ class ObjectClass(ObjectInfo):
         return template_cls_sub.format(
             classname=self.use_class_name or clsname,
             filepath=self.filepath,
-            widget=self.widget.replace('Gtk', ''),
+            widget=(self.widget or '<Unknown Widget>').replace('Gtk', ''),
             objnames=self.format_tuple_names(
                 (o.name for o in objects if not self.is_class(o)),
                 indent=20,
@@ -606,7 +620,7 @@ class ObjectApp(ObjectClass):
         return use_template.format(
             classname=self.use_class_name or clsname,
             filepath=self.filepath,
-            widget=self.widget.replace('Gtk', ''),
+            widget=(self.widget or '<Unknown Widget>').replace('Gtk', ''),
             objnames=self.format_tuple_names(
                 (o.name for o in objects if not self.is_class(o)),
                 indent=20,

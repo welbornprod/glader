@@ -154,9 +154,10 @@ def do_cmdline(
         except (PermissionError, EnvironmentError) as experm:
             print_err('Unable to make it executable:\n  {}'.format(experm))
 
-    reqs = fileinfo.extra_requires_msg()
-    if reqs:
-        print_err(f'\n{reqs}')
+    warnings = fileinfo.warning_msgs()
+    if warnings:
+        print_err(f'\n{warnings}')
+
     return 0 if content else 1
 
 
