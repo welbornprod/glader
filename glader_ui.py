@@ -6,12 +6,14 @@
 
 import os
 import sys
-from glader_util import (
-    import_fail,
-    settings,
-    GladeFile,
+from glader_core import (
     NAME,
     VERSIONSTR,
+    import_fail,
+)
+from glader_util import (
+    settings,
+    GladeFile,
 )
 
 try:

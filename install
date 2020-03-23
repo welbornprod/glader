@@ -16,6 +16,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 from collections import UserList
@@ -23,7 +24,7 @@ from collections import UserList
 from docopt import docopt
 
 NAME = 'Python Installer'
-VERSION = '0.0.7'
+VERSION = '0.0.8'
 VERSIONSTR = '{} v. {}'.format(NAME, VERSION)
 SCRIPT = os.path.split(os.path.abspath(sys.argv[0]))[1]
 SCRIPTDIR = os.path.abspath(sys.path[0])
@@ -32,11 +33,13 @@ CWD = os.getcwd()
 USAGESTR = """{versionstr}
     Usage:
         {script} -h | -v
-        {script} [preinstall] [-u] [-D]
-        {script} (uninstall | remove) [-D]
+        {script} [preinstall] [-u] [-d | -D]
+        {script} (uninstall | remove) [-d | -D]
 
     Options:
-        -D,--debug    : Don't write or create anything.
+        -D,--debug    : Print some more info while running.
+        -d,--dryrun   : Don't write or create anything.
+                        This enables --debug.
         -h,--help     : Show this help message.
         -u,--user     : Install for this user only.
         -v,--version  : Show version.
@@ -53,7 +56,8 @@ def main(argd):
     # I am simply passing it a few settings and reporters for this cmdline app.
     installer = Installer(
         use_global=not argd['--user'],
-        debug=argd['--debug'],
+        debug=argd['--debug'] or argd['--dryrun'],
+        dry_run=argd['--dryrun'],
         reporter=print,
         debug_reporter=print,
         error_reporter=fail,
@@ -232,6 +236,10 @@ class Installer(object):
         'install_type': None,
         # Extra commands to run before install.
         'commands': Commands(),
+        # Extra directories to clean for uninstalls.
+        'cleanup_dirs': [],
+        # Extra files to clean for uninstalls.
+        'cleanup_files': [],
     }
 
     # Global directories for installing applications.
@@ -264,7 +272,7 @@ class Installer(object):
     # Config file to read from.
     config_file = 'installer.json'
     # Defailt file to save the installed-files list.
-    installed_file = 'installed_files.txt'
+    installed_file = os.path.join(SCRIPTDIR, 'installed_files.txt')
 
     def __init__(self, **kwargs):
         """ Initializes the installer, gathers files/dest-files and other
@@ -276,7 +284,8 @@ class Installer(object):
                 use_global     : Do a global installation instead of local.
                 config         : Premade config to use, instead of parsing the
                                  the config file.
-                debug          : Debug mode, if True nothing is ever created.
+                debug          : Debug mode, report more info while running.
+                dry_run        : Don't write anything.
                 reporter       : A function that accepts one argument, a str.
                                  Can be None.
                                  If set, the reporter() is called with status
@@ -295,6 +304,7 @@ class Installer(object):
         # Global, or local install.
         self.use_global = kwargs.get('use_global', False)
         self.debug = kwargs.get('debug', False)
+        self.dry_run = kwargs.get('dry_run', False)
         self.cwd = os.getcwd()
         self.scriptname = os.path.split(sys.argv[0])[1]
 
@@ -327,11 +337,12 @@ class Installer(object):
         if not files:
             return False
         if reason:
+            self.report('Cleaning up because of an error:')
             self.report(reason)
 
         filelen = len(files)
         fileplural = 'file' if filelen == 1 else 'files'
-        if self.debug:
+        if self.dry_run:
             msg = 'Would\'ve cleaned'
         else:
             msg = 'Trying to clean up'
@@ -411,7 +422,7 @@ class Installer(object):
                 self.report_error(errfmt.format(installdir))
         else:
             # Make the directory.
-            if self.debug:
+            if self.dry_run:
                 self.report_debug('\nWould\'ve created: {}'.format(installdir))
                 self.created.add(installdir)
                 return installdir
@@ -425,6 +436,13 @@ class Installer(object):
                 self.report_error(errfmt.format(installdir, ex))
         # Exists, or created it, success.
         return installdir
+
+    def extra_cleanup_files(self):
+        """ Return any extra cleanup files/dirs set in config. """
+        paths = self.config.get('cleanup_dirs', [])
+        paths.extend(self.config.get('cleanup_files', []))
+        cleanup_paths = [os.path.expanduser(s) for s in paths]
+        return list(set(cleanup_paths))
 
     def fix_user_arg(self, s):
         """ Replace '{user_args}' with user arguments if needed. """
@@ -643,8 +661,8 @@ class Installer(object):
         """ Installs symlinks in the appropriate directory for executables. """
         if not os.access(self.exedir, os.W_OK):
             errmsg = 'No permissions to write to: {}'.format(self.exedir)
-            if self.debug:
-                debugfmt = '\nDebug mode, not failing: {}'
+            if self.dry_run:
+                debugfmt = '\nDry run, not failing: {}'
                 self.report_debug(debugfmt.format(errmsg))
             else:
                 self.report_error(errmsg)
@@ -660,7 +678,7 @@ class Installer(object):
         for exepath in exes:
             linkname = os.path.splitext(os.path.split(exepath)[1])[0]
             destlink = os.path.join(self.exedir, linkname)
-            if self.debug:
+            if self.dry_run:
                 debugfmt = 'Would\'ve symlinked: {} -> {}'
                 self.report_debug(debugfmt.format(destlink, exepath))
                 self.created.add(destlink)
@@ -691,7 +709,7 @@ class Installer(object):
             destfile = self.destfiles[i]
             destdir = os.path.split(destfile)[0]
             if not os.path.isdir(destdir):
-                if self.debug:
+                if self.dry_run:
                     self.report_debug(
                         'Would\'ve created dir: {}'.format(destdir)
                     )
@@ -699,6 +717,8 @@ class Installer(object):
                 else:
                     try:
                         os.makedirs(destdir, exist_ok=True)
+                        self.created.add(destdir)
+                        self.report('  Created: {}'.format(destdir))
                     except OSError as ex:
                         self.report_error(
                             'Failed to create dir: {}\n  {}'.format(
@@ -706,7 +726,7 @@ class Installer(object):
                                 ex,
                             )
                         )
-            if self.debug:
+            if self.dry_run:
                 debugfmt = 'Would\'ve copied: {} -> {}'
                 self.report_debug(debugfmt.format(srcfile, destfile))
                 self.created.add(destfile)
@@ -849,12 +869,14 @@ class Installer(object):
                 files = [l.strip() for l in f.readlines()]
         except FileNotFoundError:
             # No previously installed files.
-            return None
+            files = []
         except OSError as ex:
             failfmt = '\nFailed to read {}:\n{}'
             self.report(failfmt.format(Installer.installed_file, ex))
-            return None
-        return files
+            files = []
+        # Include any extra files/dirs.
+        files.extend(self.extra_cleanup_files())
+        return list(sorted(set(files)))
 
     def remove_files(self, files):
         """ Deletes/removes a list files and directories.
@@ -865,13 +887,9 @@ class Installer(object):
         """
         # Sort for report-formatting, but also tries to delete parent dirs
         # first.
-        try:
-            files.sort()
-        except AttributeError:
-            # None, or non-sortable object passed.
-            return 0
+        files = sorted(files)
 
-        if self.debug:
+        if self.dry_run:
             self.report_debug('Would\'ve removed:')
             self.report_debug('    {}'.format('\n    '.join(files)))
             return 0
@@ -918,6 +936,11 @@ class Installer(object):
         if not commands:
             self.report_debug('No commands to run.')
             return 0
+        if self.dry_run:
+            self.report_debug('Would\'ve ran:')
+            cmdstr = '\n    '.join(str(c) for c in commands)
+            self.report_debug(f'    {cmdstr}')
+            return 0
         return commands.run()
 
     def set_error_reporter(self, reporter):
@@ -954,8 +977,8 @@ class Installer(object):
 
     def write_installed_files(self):
         """ Save installed/created files to installed_files.txt """
-        if self.debug:
-            debugfmt = '\nDebug mode, Not writing {}...'
+        if self.dry_run:
+            debugfmt = '\nDry run, not writing {}.'
             self.report_debug(debugfmt.format(Installer.installed_file))
             return True
 
@@ -963,9 +986,11 @@ class Installer(object):
             # No files were created.
             return False
 
+        cleanup_files = list(self.created)
+        cleanup_files.extend(self.extra_cleanup_files())
         try:
             with open(Installer.installed_file, 'w') as f:
-                f.write('\n'.join(sorted(self.created)))
+                f.write('\n'.join(sorted(set(cleanup_files))))
                 f.write('\n')
                 f.flush()
         except (TypeError, OSError) as ex:
@@ -976,6 +1001,17 @@ class Installer(object):
         destfile = os.path.abspath(
             os.path.join(self.installdir, Installer.installed_file))
         localfile = os.path.abspath(Installer.installed_file)
+
+        # Ensure the installed_files.txt is writable by the installer.
+        mode_rw_all = (
+            stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH |
+            stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH
+        )
+
+        try:
+            os.chmod(localfile, mode_rw_all)
+        except OSError as ex:
+            self.report('Unable to make writable: {}\n{}'.format(destfile, ex))
 
         if destfile == localfile:
             # File already exists at the destination.

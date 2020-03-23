@@ -9,7 +9,11 @@
 import os
 import sys
 import traceback
-from glader_util import import_fail, GladeFile, VERSIONSTR
+from glader_core import (
+    VERSIONSTR,
+    import_fail,
+)
+from glader_util import GladeFile
 from glader_ui import gui_main
 
 try:

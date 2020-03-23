@@ -5,32 +5,17 @@
 """
 import os.path
 import stat
-import sys
 from datetime import datetime
 
+from glader_core import (
+    __version__,
+    CONFIGFILE,
+    NAME,
+    debug,
+    ensure_config_dir,
+    import_fail,
+)
 from glader_templates import get_template
-
-NAME = 'Glader'
-__version__ = '0.2.4'
-VERSIONSTR = '{} v. {}'.format(NAME, __version__)
-
-# Set with -D,--debug command-line options.
-DEBUG = ('-D' in sys.argv) or ('--debug' in sys.argv)
-
-
-def import_fail(err):
-    """ Fail with a friendlier message when imports fail. """
-    msglines = (
-        '\n{namever} requires some third-party libraries.',
-        'Please install requirements using \'pip\' or your package manager.',
-        'The import error was:',
-        '    {err}\n'
-    )
-    print(
-        '\n'.join(msglines).format(namever=VERSIONSTR, err=err),
-        file=sys.stderr,
-    )
-    sys.exit(1)
 
 
 try:
@@ -43,7 +28,7 @@ try:
 except ImportError as eximp:
     import_fail(eximp)
 
-CONFIGFILE = os.path.join(sys.path[0], 'glader.conf')
+ensure_config_dir()
 settings = EasySettings(CONFIGFILE)
 settings.name = NAME
 settings.version = __version__
@@ -849,10 +834,3 @@ class SignalHandler(object):
             docs=docs,
             eventargs=eventargs,
             content=content)
-
-
-def debug(*args, **kwargs):
-    if not DEBUG:
-        return None
-    kwargs['file'] = sys.stderr
-    print(*args, **kwargs)

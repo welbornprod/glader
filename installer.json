@@ -20,5 +20,6 @@
             "command": ["bash", "install_deps.sh"],
             "command_user": ["bash", "install_deps.sh", "--user"]
         }
-    ]
+    ],
+    "cleanup_dirs": ["~/.config/glader"]
 }
